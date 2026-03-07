@@ -7,7 +7,6 @@ from datetime import datetime
 def handler(event, context):
     print(f"Received event: {json.dumps(event)}")
     
-    api_key = os.environ.get('FRED_API_KEY')
     raw_bucket = os.environ.get('RAW_BUCKET_NAME')
     series_ids = ["MORTGAGE30US", "MORTGAGE15US", "MORTGAGE5US", "DGS10"]
     

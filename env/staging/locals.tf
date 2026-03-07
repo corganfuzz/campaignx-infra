@@ -2,7 +2,7 @@ locals {
   # ==============================================
   # Project Settings
   # ==============================================
-  project_name     = "mortgage-xpert"
+  project_name     = "concrete-fc"
   environment      = "staging"
   aws_region       = "us-east-1"
   enable_ai_engine = true

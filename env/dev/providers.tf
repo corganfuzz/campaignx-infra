@@ -9,9 +9,6 @@ terraform {
       source  = "hashicorp/aws"
       version = "~> 5.0"
     }
-    databricks = {
-      source = "databricks/databricks"
-    }
     archive = {
       source = "hashicorp/archive"
     }
@@ -24,15 +21,10 @@ terraform {
     }
   }
   backend "s3" {
-    bucket = "mortgage-xpert-tfstate-446311000231"
+    bucket = "concrete-fc-tfstate-446311000231"
     key    = "dev/terraform.tfstate"
     region = "us-east-1"
   }
-}
-
-provider "databricks" {
-  host  = var.databricks_host
-  token = var.databricks_token
 }
 
 provider "opensearch" {

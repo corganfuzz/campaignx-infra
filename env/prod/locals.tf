@@ -2,23 +2,10 @@ locals {
   # ==============================================
   # Project Settings
   # ==============================================
-  project_name     = "mortgage-xpert"
+  project_name     = "concrete-fc"
   environment      = "prod"
   aws_region       = "us-east-1"
   enable_ai_engine = true
-
-  # ==============================================
-  # Networking Configuration
-  # ==============================================
-  vpcs = {
-    "main" = {
-      cidr_block = "10.2.0.0/16"
-      subnets = {
-        "public-1c"  = { cidr_block = "10.2.1.0/24", availability_zone = "us-east-1c", public = true }
-        "private-1c" = { cidr_block = "10.2.11.0/24", availability_zone = "us-east-1c", public = false }
-      }
-    }
-  }
 
   # ==============================================
   # Storage Configuration
@@ -69,15 +56,5 @@ locals {
     timeout       = 30
     memory_size   = 256
     allow_bedrock = false
-  }
-
-  # ==============================================
-  # Databricks Modern Stack Configuration
-  # ==============================================
-  databricks_config = {
-    catalog_name             = "mortgage_xpert_prod"
-    schemas                  = ["bronze", "silver", "gold"]
-    warehouse_cluster_size   = "2X-Small"
-    warehouse_auto_stop_mins = 10
   }
 }

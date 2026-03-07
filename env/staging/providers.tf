@@ -21,7 +21,7 @@ terraform {
     }
   }
   backend "s3" {
-    bucket = "mortgage-xpert-tfstate-446311000231"
+    bucket = "concrete-fc-tfstate-446311000231"
     key    = "staging/terraform.tfstate"
     region = "us-east-1"
   }

@@ -1,6 +1,6 @@
 #!/bin/bash
 
-BUCKET_NAME="mortgage-xpert-tfstate-$(aws sts get-caller-identity --query Account --output text)"
+BUCKET_NAME="concrete-fc-tfstate-$(aws sts get-caller-identity --query Account --output text)"
 REGION="us-east-1"
 
 read -p "Confirm deletion of s3://$BUCKET_NAME [y/N]: " -n 1 -r

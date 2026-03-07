@@ -2,23 +2,10 @@ locals {
   # ==============================================
   # Project Settings
   # ==============================================
-  project_name     = "mortgage-xpert"
+  project_name     = "concrete-fc"
   environment      = "dev"
   aws_region       = "us-east-1"
   enable_ai_engine = true
-
-  # ==============================================
-  # Networking Configuration
-  # ==============================================
-  vpcs = {
-    "main" = {
-      cidr_block = "10.0.0.0/16"
-      subnets = {
-        "public-1a"  = { cidr_block = "10.0.1.0/24", availability_zone = "us-east-1a", public = true }
-        "private-1a" = { cidr_block = "10.0.11.0/24", availability_zone = "us-east-1a", public = false }
-      }
-    }
-  }
 
   # ==============================================
   # Storage Configuration
@@ -65,7 +52,6 @@ locals {
       source_dir    = "src"
       role_key      = "fred-fetcher"
       env_vars = {
-        FRED_API_KEY    = var.fred_api_key
         RAW_BUCKET_NAME = "raw" # Will be resolved to actual bucket name
       }
     }
@@ -78,7 +64,6 @@ locals {
       source_dir    = "src_databricks"
       role_key      = "api-proxy" # Reusing existing role
       env_vars = {
-        DATABRICKS_TOKEN        = var.databricks_token
         DATABRICKS_ENDPOINT_URL = "DATABRICKS_MODEL_SERVING_URL" # Will be set dynamically
       }
     }
@@ -96,15 +81,5 @@ locals {
         RAW_BUCKET_NAME = "raw"
       }
     }
-  }
-
-  # ==============================================
-  # Databricks Modern Stack Configuration
-  # ==============================================
-  databricks_config = {
-    catalog_name             = "mortgage_xpert"
-    schemas                  = ["bronze", "silver", "gold"]
-    warehouse_cluster_size   = "2X-Small"
-    warehouse_auto_stop_mins = 10
   }
 }
