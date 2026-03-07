@@ -74,6 +74,7 @@ The `modules/databricks` layer provisions the following objects:
 | **Catalog** | Global | The top-level container (`mortgage_xpert`) for platform data. |
 | **Schemas** | Catalog | Organizes data into bronze, silver, and gold layers. |
 | **SQL Warehouse** | Workspace | Serverless compute for all data engineering and AI queries. |
+| **Model Serving** | Workspace | Serverless endpoints for real-time specialized LLM inference. |
 
 ---
 
@@ -110,31 +111,90 @@ An enterprise-grade RAG architecture deployed on AWS and Databricks using Terraf
 The following diagram illustrates the data flow and component integration across AWS and Databricks.
 
 ```mermaid
-graph LR
-    User((User)) <-->|Query| Agent["Bedrock Agent<br>(Mortgage Advisor)"]
+flowchart TB
+    User([👤 Mobile User])
     
-    subgraph AWS_Serving ["AWS Serving Layer"]
-        Agent <--> KB[Bedrock Knowledge Base]
-        Agent <-->|Tool Call| Lambda[AWS Lambda]
-        Lambda <-->|HTTPS| FRED_API[FRED API]
-        Agent <-->|Complex Query| SM["SageMaker Endpoint<br>(Specialist Model)"]
-    end
-    
-    subgraph Databricks_Engine ["Databricks Engine"]
-        Raw[S3 Raw Bucket] -->|Auto Loader| Bronze["Delta Table<br>(Bronze)"]
-        Bronze -->|Spark ETL| Silver["Delta Table<br>(Silver)"]
-        Silver -->|Chunking| JSONL[S3 KB Source]
+    subgraph AWS ["☁️ AWS Cloud Infrastructure"]
+        direction TB
+        API[API Gateway]
         
-        MLflow{MLflow Tracking} -.->|Metrics| Silver
-        MLflow -.->|Evaluation| Agent
+        subgraph Bedrock ["🤖 Bedrock AI Layer"]
+            Agent["Bedrock Agent<br/><b>Chief Orchestrator</b><br/>(Claude Haiku)"]
+            KB["Knowledge Base<br/>(OpenSearch)"]
+        end
+        
+        subgraph Lambda ["⚡ Serverless Compute"]
+            direction LR
+            L1["FRED<br/>Fetcher"]
+            L2["API<br/>Proxy"]
+            L3["Databricks<br/>Bridge"]
+        end
     end
     
-    JSONL -->|Sync| KB
+    subgraph Databricks ["🏠 Databricks Lakehouse Platform"]
+        direction TB
+        
+        subgraph Storage ["💾 Unity Catalog Data Lake"]
+            direction LR
+            S3_Raw[("S3 Raw")] --> Bronze[("Bronze Δ")]
+            Bronze --> Silver[("Silver Δ")]
+            Silver --> Gold[("Gold Δ")]
+        end
+        
+        subgraph Compute ["⚙️ Serverless Compute"]
+            SQL["SQL Warehouse"]
+            Serving["Model Serving<br/><b>Specialist Agent</b><br/>(Llama 3.1 8B)"]
+        end
+        
+        subgraph MLOps ["📊 AI Governance"]
+            MLflow["MLflow<br/>Tracking & Registry"]
+            UC["Unity Catalog<br/>Access Control"]
+        end
+    end
     
-    style User fill:#fff,stroke:#333
-    style Agent fill:#f9f,stroke:#333
-    style FRED_API fill:#bfb,stroke:#333
+    FRED["📈 FRED API"]
+    
+    %% User Flow
+    User <-->|HTTPS| API
+    API <--> L2
+    L2 <-->|Invoke| Agent
+    
+    %% Agent Intelligence
+    Agent <-->|RAG Query| KB
+    Agent -->|"Simple Tasks<br/>(Policy Lookup)"| KB
+    Agent -->|"Complex Tasks<br/>(Refinance Math)"| L3
+    
+    %% Lambda Functions
+    L3 <-->|REST| Serving
+    L1 <-->|REST| FRED
+    L1 -->|JSON| S3_Raw
+    
+    %% Data Pipeline
+    Gold -->|Sync| KB
+    SQL --> Storage
+    
+    %% MLOps Tracking
+    Serving -.->|Log Queries| MLflow
+    Bronze -.->|Lineage| UC
+    
+    %% Styling
+    classDef aws fill:#FF9900,stroke:#232F3E,stroke-width:2px,color:#fff
+    classDef databricks fill:#FF3621,stroke:#1b3139,stroke-width:2px,color:#fff
+    classDef inference fill:#00A4E4,stroke:#003D5C,stroke-width:3px,color:#fff
+    classDef data fill:#2ECC71,stroke:#27AE60,stroke-width:2px,color:#fff
+    
+    class Agent,KB aws
+    class Serving,MLflow databricks
+    class Serving inference
+    class Bronze,Silver,Gold data
 ```
+
+### Architectural Evolution: The MLOps Leap
+This update transitions Mortgage Xpert from a standard RAG bot to an **MLOps-powered platform**. By decoupling orchestration (AWS Bedrock) from domain-specialized inference (Databricks), we achieve:
+
+1.  **Industrial MLOps**: Moving beyond simple API calls to a governed model lifecycle tracked by MLflow and governed by Unity Catalog.
+2.  **Hybrid Intelligence**: Optimizing for cost with Claude Haiku while leveraging specialized, fine-tuned Llama models on Databricks for complex math and policy reasoning.
+3.  **Continuous Improvement Loop**: Every complex query logged in the Lakehouse becomes training data for the *next* version of your fine-tuned model.
 
 ### Architectural Evolution
 This platform represents a significant architectural upgrade from a standard Multi-Agent implementation. By integrating Databricks, the system transitions from a basic retrieval chatbot to a robust MLOps Platform featuring:
@@ -178,6 +238,18 @@ nat_gateway_id = [
 ][0]
 ```
 
+#### Automated Lambda Orchestration
+The platform utilizes a **Single-Module / Multi-Function** pattern for serverless compute. Instead of hardcoded module instances, all Lambdas are provisioned via a unified `for_each` loop over a configuration map in `locals.tf`.
+
+```hcl
+module "lambda" {
+  for_each = var.enable_ai_engine ? var.lambdas : {}
+  source   = "../modules/lambda"
+  # ... automated wiring of roles, sources, and env vars ...
+}
+```
+This ensures perfect architectural parity across all functions and eliminates manual wiring errors.
+
 ### Deployment Workflow
 Use the -chdir option to manage environments from the root directory:
 
@@ -200,13 +272,16 @@ terraform -chdir=env/dev apply
 ├── infrastructure/
 ├── modules/
 │   ├── networking/
-│   │   ├── gateways/
-│   │   ├── routing/
-│   │   ├── subnets/
-│   │   └── vpc/
 │   ├── databricks/
+│   │   ├── main.tf
+│   │   └── model_serving.tf
 │   ├── iam/
-│   └── storage/
+│   ├── storage/
+│   └── lambda/
+│       ├── main.tf
+│       ├── src/           # FRED Fetcher
+│       ├── src_proxy/     # API Proxy
+│       └── src_databricks/# DB Bridge
 └── scripts/
 ```
 
@@ -249,6 +324,7 @@ aws ec2 describe-route-tables \
 | **IaC** | **Terraform** | Infrastructure orchestration for AWS & Databricks resources. |
 | **Governance**| **Unity Catalog** | Centralized access control and discovery for all data assets. |
 | **Compute** | **Serverless SQL** | Dedicated serverless endpoints for data engineering and AI queries. |
+| **Inference** | **Model Serving** | Serverless LLM endpoints for specialized mortgage reasoning. |
 | **GenAI** | **AWS Bedrock** | Authoritative Agentic orchestration and Knowledge Base. |
 | **MLOps** | **MLflow** | Experiment tracking, model registry, and agent evaluation. |
-| **Integration** | **AWS Lambda** | Serverless connectivity for external APIs (FRED). |
+| **Integration** | **AWS Lambda** | Unified serverless compute for external APIs and cross-cloud bridging. |

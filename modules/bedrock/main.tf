@@ -199,6 +199,32 @@ resource "aws_bedrockagent_agent_action_group" "fred" {
   }
 }
 
+resource "aws_bedrockagent_agent_action_group" "databricks_expert" {
+  action_group_name          = "DatabricksExpert"
+  agent_id                   = aws_bedrockagent_agent.this.id
+  agent_version              = "DRAFT"
+  skip_resource_in_use_check = true
+
+  action_group_executor {
+    lambda = var.databricks_bridge_lambda_arn
+  }
+
+  function_schema {
+    member_functions {
+      functions {
+        name        = "invoke_mortgage_expert"
+        description = "Routes complex mortgage analysis queries to a specialized LLM on Databricks. Use for: detailed refinance scenarios, ARM vs fixed analysis, DTI edge cases, or any query requiring deep domain reasoning."
+        parameters {
+          map_block_key = "query"
+          type          = "string"
+          description   = "The mortgage-related question or analysis request"
+          required      = true
+        }
+      }
+    }
+  }
+}
+
 resource "aws_bedrockagent_agent_knowledge_base_association" "this" {
   agent_id             = aws_bedrockagent_agent.this.id
   agent_version        = var.bedrock_config.agent_version

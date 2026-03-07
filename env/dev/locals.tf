@@ -55,20 +55,47 @@ locals {
   # ==============================================
   # AWS Lambda Configuration
   # ==============================================
-  lambda_config = {
-    runtime       = "python3.11"
-    handler       = "fred_fetcher.handler"
-    timeout       = 60
-    memory_size   = 512
-    allow_bedrock = true
-  }
-
-  api_proxy_config = {
-    runtime       = "python3.11"
-    handler       = "index.lambda_handler"
-    timeout       = 30
-    memory_size   = 256
-    allow_bedrock = false
+  lambdas = {
+    "fred-fetcher" = {
+      runtime       = "python3.11"
+      handler       = "fred_fetcher.handler"
+      timeout       = 60
+      memory_size   = 512
+      allow_bedrock = true
+      source_dir    = "src"
+      role_key      = "fred-fetcher"
+      env_vars = {
+        FRED_API_KEY    = var.fred_api_key
+        RAW_BUCKET_NAME = "raw" # Will be resolved to actual bucket name
+      }
+    }
+    "databricks-bridge" = {
+      runtime       = "python3.11"
+      handler       = "databricks_bridge.handler"
+      timeout       = 120
+      memory_size   = 256
+      allow_bedrock = true
+      source_dir    = "src_databricks"
+      role_key      = "api-proxy" # Reusing existing role
+      env_vars = {
+        DATABRICKS_TOKEN        = var.databricks_token
+        DATABRICKS_ENDPOINT_URL = "DATABRICKS_MODEL_SERVING_URL" # Will be set dynamically
+      }
+    }
+    "api-proxy" = {
+      runtime       = "python3.11"
+      handler       = "index.lambda_handler"
+      timeout       = 30
+      memory_size   = 256
+      allow_bedrock = false
+      source_dir    = "src_proxy"
+      role_key      = "api-proxy"
+      env_vars = {
+        AGENT_ID        = "BEDROCK_AGENT_ID" # Will be set dynamically
+        AGENT_ALIAS_ID  = "TSTALIASID"
+        RAW_BUCKET_NAME = "raw"
+      }
+    }
   }
 
   # ==============================================

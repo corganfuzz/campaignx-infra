@@ -29,6 +29,12 @@ variable "lambda_function_arn" {
   default     = null
 }
 
+variable "databricks_bridge_lambda_arn" {
+  description = "ARN of the Databricks Bridge Lambda"
+  type        = string
+  default     = null
+}
+
 variable "bedrock_kb_role_arn" {
   description = "IAM Role ARN for the Knowledge Base"
   type        = string

@@ -10,3 +10,7 @@ output "catalog_name" {
 output "external_locations" {
   value = [for l in databricks_external_location.buckets : l.name]
 }
+
+output "model_serving_url" {
+  value = "https://serving.databricks.com/endpoints/${databricks_model_serving.mortgage_expert.name}/invocations"
+}

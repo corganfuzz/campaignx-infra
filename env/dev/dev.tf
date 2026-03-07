@@ -12,8 +12,7 @@ module "infrastructure" {
   databricks_token  = var.databricks_token
   fred_api_key      = var.fred_api_key
   bedrock_config    = local.bedrock_config
-  lambda_config     = local.lambda_config
-  api_proxy_config  = local.api_proxy_config
+  lambdas           = local.lambdas
   databricks_config = local.databricks_config
 
   providers = {

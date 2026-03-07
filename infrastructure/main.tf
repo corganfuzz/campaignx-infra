@@ -100,57 +100,52 @@ module "databricks" {
   }
 }
 
-module "lambda_fred" {
-  for_each = var.enable_ai_engine ? { "enabled" = true } : {}
+module "lambda" {
+  for_each = var.enable_ai_engine ? var.lambdas : {}
   source   = "../modules/lambda"
 
   project_name    = var.project_name
   environment     = var.environment
   aws_region      = var.aws_region
-  lambda_role_arn = module.iam.role_arns["fred-fetcher"]
-  lambda_config   = merge(var.lambda_config, { allow_bedrock = true })
-  function_name   = "fred-fetcher"
-  source_dir      = "${path.module}/../modules/lambda/src"
-  environment_variables = {
-    FRED_API_KEY    = var.fred_api_key
-    RAW_BUCKET_NAME = module.storage.bucket_names["raw"]
+  lambda_role_arn = module.iam.role_arns[each.value.role_key]
+  function_name   = each.key
+  source_dir      = "${path.module}/../modules/lambda/${each.value.source_dir}"
+
+  lambda_config = {
+    runtime       = each.value.runtime
+    handler       = each.value.handler
+    timeout       = each.value.timeout
+    memory_size   = each.value.memory_size
+    allow_bedrock = each.value.allow_bedrock
   }
+
+  environment_variables = merge(
+    {
+      for k, v in each.value.env_vars : k => (
+        v == "raw" ? module.storage.bucket_names["raw"] :
+        v == "BEDROCK_AGENT_ID" ? module.bedrock["enabled"].agent_id :
+        v == "DATABRICKS_MODEL_SERVING_URL" ? module.databricks.model_serving_url :
+        v
+      )
+    }
+  )
 }
 
 module "bedrock" {
   for_each = var.enable_ai_engine ? { "enabled" = true } : {}
   source   = "../modules/bedrock"
 
-  project_name           = var.project_name
-  environment            = var.environment
-  aws_region             = var.aws_region
-  kb_s3_bucket_arn       = module.storage.bucket_arns["kb-source"]
-  kb_s3_bucket_name      = module.storage.bucket_names["kb-source"]
-  lambda_function_arn    = try(module.lambda_fred["enabled"].function_arn, null)
-  bedrock_kb_role_arn    = module.iam.role_arns["bedrock-kb"]
-  bedrock_kb_role_name   = module.iam.role_names["bedrock-kb"]
-  bedrock_agent_role_arn = module.iam.role_arns["bedrock-agent"]
-  bedrock_config         = var.bedrock_config
-}
-
-module "lambda_api_proxy" {
-  for_each = var.enable_ai_engine ? { "enabled" = true } : {}
-  source   = "../modules/lambda"
-
-  project_name    = var.project_name
-  environment     = var.environment
-  aws_region      = var.aws_region
-  lambda_role_arn = module.iam.role_arns["api-proxy"]
-  function_name   = "api-proxy"
-  source_dir      = "${path.module}/../modules/lambda/src_proxy"
-
-  lambda_config = var.api_proxy_config
-
-  environment_variables = {
-    AGENT_ID        = module.bedrock["enabled"].agent_id
-    AGENT_ALIAS_ID  = "TSTALIASID" # Default DRAFT alias
-    RAW_BUCKET_NAME = module.storage.bucket_names["raw"]
-  }
+  project_name                 = var.project_name
+  environment                  = var.environment
+  aws_region                   = var.aws_region
+  kb_s3_bucket_arn             = module.storage.bucket_arns["kb-source"]
+  kb_s3_bucket_name            = module.storage.bucket_names["kb-source"]
+  lambda_function_arn          = try(module.lambda["fred-fetcher"].function_arn, null)
+  databricks_bridge_lambda_arn = try(module.lambda["databricks-bridge"].function_arn, null)
+  bedrock_kb_role_arn          = module.iam.role_arns["bedrock-kb"]
+  bedrock_kb_role_name         = module.iam.role_names["bedrock-kb"]
+  bedrock_agent_role_arn       = module.iam.role_arns["bedrock-agent"]
+  bedrock_config               = var.bedrock_config
 }
 
 module "api_gateway" {
@@ -159,7 +154,7 @@ module "api_gateway" {
 
   project_name         = var.project_name
   environment          = var.environment
-  lambda_invoke_arn    = module.lambda_api_proxy["enabled"].invoke_arn
-  lambda_function_name = module.lambda_api_proxy["enabled"].function_name
+  lambda_invoke_arn    = module.lambda["api-proxy"].invoke_arn
+  lambda_function_name = module.lambda["api-proxy"].function_name
 }
 
