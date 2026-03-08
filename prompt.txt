@@ -1,0 +1,85 @@
+campaignx-infra/
+│
+├── env/
+│   ├── dev/
+│   │   ├── dev.tf
+│   │   ├── locals.tf
+│   │   ├── outputs.tf
+│   │   ├── providers.tf
+│   │   └── variables.tf
+│   ├── staging/
+│   │   ├── staging.tf
+│   │   ├── locals.tf
+│   │   ├── outputs.tf
+│   │   ├── providers.tf
+│   │   └── variables.tf
+│   └── prod/
+│       ├── prod.tf
+│       ├── locals.tf
+│       ├── outputs.tf
+│       ├── providers.tf
+│       └── variables.tf
+│
+├── infrastructure/
+│   ├── main.tf
+│   ├── outputs.tf
+│   └── variables.tf
+│
+├── modules/
+│   ├── iam/
+│   │   ├── main.tf
+│   │   ├── outputs.tf
+│   │   └── variables.tf
+│   ├── storage/
+│   │   ├── main.tf
+│   │   ├── outputs.tf
+│   │   └── variables.tf
+│   ├── dynamodb/              ← its own module
+│   │   ├── main.tf
+│   │   ├── outputs.tf
+│   │   └── variables.tf
+│   ├── bedrock/
+│   │   ├── main.tf
+│   │   ├── outputs.tf
+│   │   ├── variables.tf
+│   │   ├── versions.tf
+│   │   └── src/
+│   │       └── agent.txt
+│   ├── guardrails/
+│   │   ├── main.tf
+│   │   ├── outputs.tf
+│   │   └── variables.tf
+│   ├── lambda/
+│   │   ├── main.tf
+│   │   ├── outputs.tf
+│   │   ├── variables.tf
+│   │   └── src/
+│   │       ├── submit_brief.py
+│   │       ├── generate_campaign.py
+│   │       ├── check_compliance.py
+│   │       ├── get_campaigns.py
+│   │       ├── get_insights.py
+│   │       ├── refresh_knowledge.py
+│   │       └── update_approval.py
+│   ├── api_gateway/
+│   │   ├── main.tf
+│   │   ├── outputs.tf
+│   │   └── variables.tf
+│   ├── sqs/
+│   │   ├── main.tf
+│   │   ├── outputs.tf
+│   │   └── variables.tf
+│   ├── sns/
+│   │   ├── main.tf
+│   │   ├── outputs.tf
+│   │   └── variables.tf
+│   ├── analytics/
+│   │   ├── main.tf
+│   │   ├── outputs.tf
+│   │   └── variables.tf
+│   └── scheduler/
+│       ├── main.tf
+│       ├── outputs.tf
+│       └── variables.tf
+│
+└── README.md

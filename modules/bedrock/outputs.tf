@@ -1,19 +1,15 @@
 output "agent_id" {
-  value = aws_bedrockagent_agent.this.id
+  value = aws_bedrockagent_agent.orchestrator.id
 }
 
 output "kb_id" {
-  value = aws_bedrockagent_knowledge_base.this_v2.id
+  value = aws_bedrockagent_knowledge_base.main.id
 }
 
 output "data_source_id" {
-  value = aws_bedrockagent_data_source.this_v2.data_source_id
-}
-
-output "oss_collection_arn" {
-  value = aws_opensearchserverless_collection.this.arn
+  value = aws_bedrockagent_data_source.main.data_source_id
 }
 
 output "collection_endpoint" {
-  value = aws_opensearchserverless_collection.this.collection_endpoint
+  value = aws_opensearchserverless_collection.kb_collection.collection_endpoint
 }

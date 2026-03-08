@@ -1,20 +1,9 @@
-# output "vpcs" {
-#   description = "Map of created VPCs and their properties"
-#   value = {
-#     for k, v in module.vpc : k => {
-#       vpc_id             = v.vpc_id
-#       public_subnet_ids  = module.subnets[k].public_subnet_ids
-#       private_subnet_ids = module.subnets[k].private_subnet_ids
-#     }
-#   }
-# }
-
 output "s3_buckets" {
-  value = module.storage.bucket_names
+  value = { for k, v in module.storage : k => v.bucket_name }
 }
 
 output "iam_roles" {
-  value = module.iam.role_arns
+  value = { for k, v in module.iam : k => v.role_arn }
 }
 
 output "bedrock_kb_id" {
@@ -30,7 +19,7 @@ output "bedrock_collection_endpoint" {
 }
 
 output "api_url" {
-  value = try(module.api_gateway["enabled"].api_url, "N/A - Module Disabled")
+  value = try(module.api_gateway["enabled"].api_endpoint, "N/A - Module Disabled")
 }
 
 output "api_key" {

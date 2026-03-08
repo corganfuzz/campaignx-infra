@@ -8,6 +8,10 @@ module "infrastructure" {
   s3_buckets        = local.s3_buckets
   iam_roles         = local.iam_roles
   bedrock_config    = local.bedrock_config
-  lambdas           = local.lambdas
-
+  dynamodb_tables   = local.dynamodb_tables
+  sqs_queues        = local.sqs_queues
+  sns_topics        = local.sns_topics
+  guardrails        = local.guardrails
+  analytics_streams = local.analytics_streams
+  lambda_functions  = local.lambda_functions
 }

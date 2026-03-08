@@ -1,78 +1,174 @@
+# ── Storage ────────────────────────────────────────────
 module "storage" {
-  source = "../modules/storage"
+  for_each = var.s3_buckets
+  source   = "../modules/storage"
 
   project_name = var.project_name
   environment  = var.environment
-  s3_buckets   = var.s3_buckets
+  bucket_key   = each.key
+  versioning   = each.value.versioning
 }
 
-module "iam" {
-  source = "../modules/iam"
+# ── DynamoDB ───────────────────────────────────────────
+module "dynamodb" {
+  for_each = var.dynamodb_tables
+  source   = "../modules/dynamodb"
+
+  project_name = var.project_name
+  environment  = var.environment
+  table_key    = each.key
+}
+
+# ── Shared POC Policy (broad access for development) ──
+module "iam_policy" {
+  source = "../modules/iam_policy"
 
   project_name        = var.project_name
   environment         = var.environment
-  storage_bucket_arns = module.storage.bucket_arns
-  iam_roles           = var.iam_roles
+  storage_bucket_arns = [for k, v in module.storage : v.bucket_arn]
+  dynamodb_table_arns = [for k, v in module.dynamodb : v.table_arn]
 }
 
-resource "time_sleep" "wait_60_seconds" {
-  depends_on = [module.iam]
+# ── IAM ────────────────────────────────────────────────
+module "iam" {
+  for_each = var.iam_roles
+  source   = "../modules/iam"
 
-  create_duration = "60s"
+  project_name  = var.project_name
+  environment   = var.environment
+  role_key      = each.key
+  trust_service = each.value.trust_service
+  policy_arns   = [module.iam_policy.policy_arn]
 }
 
-module "lambda" {
-  for_each = var.enable_ai_engine ? var.lambdas : {}
-  source   = "../modules/lambda"
+
+# ── SQS ────────────────────────────────────────────────
+module "sqs" {
+  for_each = var.sqs_queues
+  source   = "../modules/sqs"
+
+  project_name  = var.project_name
+  environment   = var.environment
+  queue_key     = each.key
+  sns_topic_arn = module.sns["approvals"].topic_arn
+}
+
+# ── Guardrails ─────────────────────────────────────────
+module "guardrails" {
+  for_each = var.guardrails
+  source   = "../modules/guardrails"
+
+  project_name     = var.project_name
+  environment      = var.environment
+  guardrail_key    = each.key
+  guardrail_config = each.value
+}
+
+# ── SNS ────────────────────────────────────────────────
+module "sns" {
+  for_each = var.sns_topics
+  source   = "../modules/sns"
 
   project_name    = var.project_name
   environment     = var.environment
-  aws_region      = var.aws_region
-  lambda_role_arn = module.iam.role_arns[each.value.role_key]
-  function_name   = each.key
-  source_dir      = "${path.module}/../modules/lambda/${each.value.source_dir}"
-
-  lambda_config = {
-    runtime       = each.value.runtime
-    handler       = each.value.handler
-    timeout       = each.value.timeout
-    memory_size   = each.value.memory_size
-    allow_bedrock = each.value.allow_bedrock
-  }
-
-  environment_variables = merge(
-    {
-      for k, v in each.value.env_vars : k => (
-        v == "raw" ? module.storage.bucket_names["raw"] :
-        v == "BEDROCK_AGENT_ID" ? module.bedrock["enabled"].agent_id :
-        v
-      )
-    }
-  )
+  topic_key       = each.key
+  email_recipient = each.value.email_recipient
 }
 
+# ── Bedrock (KB + Agent) ───────────────────────────────
 module "bedrock" {
   for_each = var.enable_ai_engine ? { "enabled" = true } : {}
   source   = "../modules/bedrock"
 
-  project_name                 = var.project_name
-  environment                  = var.environment
-  aws_region                   = var.aws_region
-  kb_s3_bucket_arn             = module.storage.bucket_arns["kb-source"]
-  kb_s3_bucket_name            = module.storage.bucket_names["kb-source"]
-  bedrock_kb_role_arn          = module.iam.role_arns["bedrock-kb"]
-  bedrock_kb_role_name         = module.iam.role_names["bedrock-kb"]
-  bedrock_agent_role_arn       = module.iam.role_arns["bedrock-agent"]
-  bedrock_config               = var.bedrock_config
+
+  project_name           = var.project_name
+  environment            = var.environment
+  aws_region             = var.aws_region
+  kb_s3_bucket_arn       = module.storage["rag-docs"].bucket_arn
+  kb_s3_bucket_name      = module.storage["rag-docs"].bucket_name
+  bedrock_kb_role_arn    = module.iam["bedrock-kb"].role_arn
+  bedrock_kb_role_name   = module.iam["bedrock-kb"].role_name
+  bedrock_agent_role_arn = module.iam["bedrock-agent"].role_arn
+  bedrock_config         = var.bedrock_config
+  guardrail_id           = module.guardrails["default"].guardrail_id
+
+  # Action group Lambda ARNs
+  lambda_creative_arn   = module.lambda["generate-campaign"].function_arn
+  lambda_compliance_arn = module.lambda["check-compliance"].function_arn
 }
 
+# ── Lambda Functions ───────────────────────────────────
+module "lambda" {
+  for_each = var.lambda_functions
+  source   = "../modules/lambda"
+
+  project_name = var.project_name
+  environment  = var.environment
+  aws_region   = var.aws_region
+
+  function_name   = each.key
+  lambda_role_arn = module.iam[each.value.role].role_arn
+  lambda_config   = each.value.config
+  source_dir      = "${path.module}/../modules/lambda/src"
+
+  environment_variables = merge(each.value.env_vars, {
+    CAMPAIGN_TABLE   = module.dynamodb["campaigns"].table_name
+    OUTPUTS_BUCKET   = module.storage["outputs"].bucket_name
+    ASSETS_BUCKET    = module.storage["assets-input"].bucket_name
+    RAG_BUCKET       = module.storage["rag-docs"].bucket_name
+    ANALYTICS_BUCKET = module.storage["analytics"].bucket_name
+    SQS_QUEUE_URL    = module.sqs["campaign-gen"].queue_url
+    SQS_QUEUE_ARN    = module.sqs["campaign-gen"].queue_arn
+    AGENT_ID         = try(module.bedrock["enabled"].agent_id, "")
+    AGENT_ALIAS_ID   = "TSTALIASID"
+    GUARDRAIL_ID     = module.guardrails["default"].guardrail_id
+    FIREHOSE_STREAM  = module.analytics["events"].firehose_stream_name
+    SNS_TOPIC_ARN    = module.sns["approvals"].topic_arn
+  })
+
+  sqs_trigger_arn    = each.key == "generate-campaign" ? module.sqs["campaign-gen"].queue_arn : null
+  create_sqs_trigger = each.key == "generate-campaign"
+
+  api_gateway_execution_arn = try(module.api_gateway["enabled"].api_execution_arn, null)
+  create_apigw_permission   = contains(["submit-brief", "get-campaigns", "get-insights", "update-approval"], each.key)
+}
+
+# ── Analytics (Kinesis + Firehose + Athena) ────────────
+module "analytics" {
+  for_each = var.analytics_streams
+  source   = "../modules/analytics"
+
+  project_name      = var.project_name
+  environment       = var.environment
+  analytics_key     = each.key
+  bucket_arn        = module.storage["analytics"].bucket_arn
+  bucket_name       = module.storage["analytics"].bucket_name
+  firehose_role_arn = module.iam["firehose"].role_arn
+}
+
+# ── Scheduler (EventBridge cron → Lambda 6) ───────────
+module "scheduler" {
+  for_each = var.enable_ai_engine ? { "enabled" = true } : {}
+  source   = "../modules/scheduler"
+
+  project_name        = var.project_name
+  environment         = var.environment
+  lambda_function_arn = module.lambda["refresh-knowledge"].function_arn
+  schedule_expression = "cron(0 0 ? * * *)" # every day at midnight (daily)
+}
+
+# ── API Gateway ────────────────────────────────────────
 module "api_gateway" {
   for_each = var.enable_ai_engine ? { "enabled" = true } : {}
   source   = "../modules/api_gateway"
 
-  project_name         = var.project_name
-  environment          = var.environment
-  lambda_invoke_arn    = module.lambda["api-proxy"].invoke_arn
-  lambda_function_name = module.lambda["api-proxy"].function_name
-}
+  project_name = var.project_name
+  environment  = var.environment
 
+  lambda_integrations = {
+    "submit-brief"    = module.lambda["submit-brief"].invoke_arn
+    "get-campaigns"   = module.lambda["get-campaigns"].invoke_arn
+    "get-insights"    = module.lambda["get-insights"].invoke_arn
+    "update-approval" = module.lambda["update-approval"].invoke_arn
+  }
+}
