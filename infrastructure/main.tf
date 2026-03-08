@@ -47,10 +47,9 @@ module "sqs" {
   for_each = var.sqs_queues
   source   = "../modules/sqs"
 
-  project_name  = var.project_name
-  environment   = var.environment
-  queue_key     = each.key
-  sns_topic_arn = module.sns["approvals"].topic_arn
+  project_name = var.project_name
+  environment  = var.environment
+  queue_key    = each.key
 }
 
 # ── Guardrails ─────────────────────────────────────────
@@ -64,16 +63,6 @@ module "guardrails" {
   guardrail_config = each.value
 }
 
-# ── SNS ────────────────────────────────────────────────
-module "sns" {
-  for_each = var.sns_topics
-  source   = "../modules/sns"
-
-  project_name    = var.project_name
-  environment     = var.environment
-  topic_key       = each.key
-  email_recipient = each.value.email_recipient
-}
 
 # ── Bedrock (KB + Agent) ───────────────────────────────
 module "bedrock" {
@@ -112,18 +101,15 @@ module "lambda" {
   source_dir      = "${path.module}/../modules/lambda/src"
 
   environment_variables = merge(each.value.env_vars, {
-    CAMPAIGN_TABLE   = module.dynamodb["campaigns"].table_name
-    OUTPUTS_BUCKET   = module.storage["outputs"].bucket_name
-    ASSETS_BUCKET    = module.storage["assets-input"].bucket_name
-    RAG_BUCKET       = module.storage["rag-docs"].bucket_name
-    ANALYTICS_BUCKET = module.storage["analytics"].bucket_name
-    SQS_QUEUE_URL    = module.sqs["campaign-gen"].queue_url
-    SQS_QUEUE_ARN    = module.sqs["campaign-gen"].queue_arn
-    AGENT_ID         = try(module.bedrock["enabled"].agent_id, "")
-    AGENT_ALIAS_ID   = "TSTALIASID"
-    GUARDRAIL_ID     = module.guardrails["default"].guardrail_id
-    FIREHOSE_STREAM  = module.analytics["events"].firehose_stream_name
-    SNS_TOPIC_ARN    = module.sns["approvals"].topic_arn
+    CAMPAIGN_TABLE = module.dynamodb["campaigns"].table_name
+    OUTPUTS_BUCKET = module.storage["outputs"].bucket_name
+    ASSETS_BUCKET  = module.storage["assets-input"].bucket_name
+    RAG_BUCKET     = module.storage["rag-docs"].bucket_name
+    SQS_QUEUE_URL  = module.sqs["campaign-gen"].queue_url
+    SQS_QUEUE_ARN  = module.sqs["campaign-gen"].queue_arn
+    AGENT_ID       = try(module.bedrock["enabled"].agent_id, "")
+    AGENT_ALIAS_ID = "TSTALIASID"
+    GUARDRAIL_ID   = module.guardrails["default"].guardrail_id
   })
 
   sqs_trigger_arn    = each.key == "generate-campaign" ? module.sqs["campaign-gen"].queue_arn : null
@@ -133,29 +119,6 @@ module "lambda" {
   create_apigw_permission   = contains(["submit-brief", "get-campaigns", "get-insights", "update-approval"], each.key)
 }
 
-# ── Analytics (Kinesis + Firehose + Athena) ────────────
-module "analytics" {
-  for_each = var.analytics_streams
-  source   = "../modules/analytics"
-
-  project_name      = var.project_name
-  environment       = var.environment
-  analytics_key     = each.key
-  bucket_arn        = module.storage["analytics"].bucket_arn
-  bucket_name       = module.storage["analytics"].bucket_name
-  firehose_role_arn = module.iam["firehose"].role_arn
-}
-
-# ── Scheduler (EventBridge cron → Lambda 6) ───────────
-module "scheduler" {
-  for_each = var.enable_ai_engine ? { "enabled" = true } : {}
-  source   = "../modules/scheduler"
-
-  project_name        = var.project_name
-  environment         = var.environment
-  lambda_function_arn = module.lambda["refresh-knowledge"].function_arn
-  schedule_expression = "cron(0 0 ? * * *)" # every day at midnight (daily)
-}
 
 # ── API Gateway ────────────────────────────────────────
 module "api_gateway" {

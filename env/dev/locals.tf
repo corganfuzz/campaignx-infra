@@ -10,7 +10,6 @@ locals {
     "rag-docs"     = { versioning = true } # brand guidelines + regional trends
     "assets-input" = { versioning = true } # uploaded brand images
     "outputs"      = { versioning = true } # generated campaign images
-    "analytics"    = { versioning = true } # kinesis firehose events
   }
 
   dynamodb_tables = {
@@ -21,13 +20,7 @@ locals {
     "campaign-gen" = {}
   }
 
-  sns_topics = {
-    "approvals" = { email_recipient = "creative-team@company.com" }
-  }
 
-  analytics_streams = {
-    "events" = {}
-  }
 
   # ── IAM Roles ───────────────────────────────────────
   iam_roles = {
@@ -38,9 +31,7 @@ locals {
     "check-compliance"  = { trust_service = "lambda.amazonaws.com" }
     "get-campaigns"     = { trust_service = "lambda.amazonaws.com" }
     "get-insights"      = { trust_service = "lambda.amazonaws.com" }
-    "refresh-knowledge" = { trust_service = "lambda.amazonaws.com" }
     "update-approval"   = { trust_service = "lambda.amazonaws.com" }
-    "firehose"          = { trust_service = "firehose.amazonaws.com" }
   }
 
   # ── Bedrock ─────────────────────────────────────────
@@ -120,17 +111,6 @@ locals {
         handler       = "get_insights.handler"
         timeout       = 30
         memory_size   = 256
-        architectures = ["x86_64"]
-      }
-      env_vars = {}
-    }
-    "refresh-knowledge" = {
-      role = "refresh-knowledge"
-      config = {
-        runtime       = "python3.12"
-        handler       = "refresh_knowledge.handler"
-        timeout       = 300
-        memory_size   = 512
         architectures = ["x86_64"]
       }
       env_vars = {}

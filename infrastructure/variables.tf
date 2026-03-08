@@ -43,11 +43,6 @@ variable "sqs_queues" {
   type = map(any)
 }
 
-variable "sns_topics" {
-  type = map(object({
-    email_recipient = string
-  }))
-}
 
 variable "guardrails" {
   type = map(object({
@@ -56,9 +51,6 @@ variable "guardrails" {
   }))
 }
 
-variable "analytics_streams" {
-  type = map(any)
-}
 
 variable "lambda_functions" {
   type = map(object({

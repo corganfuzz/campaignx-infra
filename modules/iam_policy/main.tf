@@ -15,22 +15,6 @@ data "aws_iam_policy_document" "broad_poc_policy" {
     actions   = ["sqs:SendMessage", "sqs:ReceiveMessage", "sqs:DeleteMessage", "sqs:GetQueueAttributes"]
     resources = ["*"]
   }
-  statement {
-    actions   = ["firehose:PutRecord", "firehose:PutRecordBatch"]
-    resources = ["*"]
-  }
-  statement {
-    actions   = ["sns:Publish"]
-    resources = ["*"]
-  }
-  statement {
-    actions   = ["athena:StartQueryExecution", "athena:GetQueryExecution", "athena:GetQueryResults"]
-    resources = ["*"]
-  }
-  statement {
-    actions   = ["glue:GetTable", "glue:GetPartitions"]
-    resources = ["*"]
-  }
 }
 
 resource "aws_iam_policy" "poc_policy" {

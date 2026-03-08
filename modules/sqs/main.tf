@@ -13,20 +13,3 @@ resource "aws_sqs_queue" "this" {
   })
 }
 
-resource "aws_cloudwatch_metric_alarm" "dlq_alarm" {
-  alarm_name          = "${var.project_name}-${var.environment}-${var.queue_key}-dlq-alarm"
-  comparison_operator = "GreaterThanThreshold"
-  evaluation_periods  = 1
-  metric_name         = "ApproximateNumberOfMessagesVisible"
-  namespace           = "AWS/SQS"
-  period              = 60
-  statistic           = "Average"
-  threshold           = 0
-  alarm_description   = "Alarm when messages are in DLQ"
-
-  dimensions = {
-    QueueName = aws_sqs_queue.dlq.name
-  }
-
-  alarm_actions = [var.sns_topic_arn]
-}
