@@ -117,6 +117,7 @@ module "lambda" {
 
   api_gateway_execution_arn = try(module.api_gateway["enabled"].api_execution_arn, null)
   create_apigw_permission   = contains(["submit-brief", "get-campaigns", "get-insights", "update-approval"], each.key)
+  create_bedrock_permission = contains(["generate-campaign", "check-compliance"], each.key)
 }
 
 

@@ -38,3 +38,8 @@ variable "create_apigw_permission" {
   type    = bool
   default = false
 }
+
+variable "create_bedrock_permission" {
+  type    = bool
+  default = false
+}

@@ -38,3 +38,11 @@ resource "aws_lambda_permission" "apigw" {
   principal     = "apigateway.amazonaws.com"
   source_arn    = "${var.api_gateway_execution_arn}/*/*"
 }
+
+resource "aws_lambda_permission" "bedrock" {
+  count         = var.create_bedrock_permission ? 1 : 0
+  statement_id  = "AllowExecutionFromBedrock"
+  action        = "lambda:InvokeFunction"
+  function_name = aws_lambda_function.function.function_name
+  principal     = "bedrock.amazonaws.com"
+}

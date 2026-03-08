@@ -1,19 +1,144 @@
-# ── Knowledge Base (OpenSearch Serverless) ─────────────────
-resource "aws_opensearchserverless_collection" "kb_collection" {
-  name = "${var.project_name}-${var.environment}-kb"
-  type = "VECTORSEARCH"
+data "aws_caller_identity" "current" {}
+
+# ── OpenSearch Serverless (OSS) Policies ───────────────
+resource "aws_opensearchserverless_security_policy" "network" {
+  name = "${var.project_name}-${var.environment}-oss-net"
+  type = "network"
+  policy = jsonencode([
+    {
+      Description = "Public access for OSS"
+      Rules = [
+        {
+          ResourceType = "collection"
+          Resource     = ["collection/${var.project_name}-${var.environment}-kb"]
+        },
+        {
+          ResourceType = "dashboard"
+          Resource     = ["collection/${var.project_name}-${var.environment}-kb"]
+        }
+      ]
+      AllowFromPublic = true
+    }
+  ])
 }
 
-# (In a real implementation you would also need data access policies, 
-# network policies, and the actual index creation which often requires a Lambda custom resource.
-# For this POC config, we just define the Bedrock KB resource pointing to the collection)
+resource "aws_opensearchserverless_security_policy" "encryption" {
+  name = "${var.project_name}-${var.environment}-oss-enc"
+  type = "encryption"
+  policy = jsonencode({
+    Rules = [
+      {
+        ResourceType = "collection"
+        Resource     = ["collection/${var.project_name}-${var.environment}-kb"]
+      }
+    ]
+    AWSOwnedKey = true
+  })
+}
 
+resource "aws_opensearchserverless_access_policy" "this" {
+  name = "${var.project_name}-${var.environment}-access"
+  type = "data"
+  policy = jsonencode([
+    {
+      Rules = [
+        {
+          ResourceType = "index"
+          Resource     = ["index/${var.project_name}-${var.environment}-kb/*"]
+          Permission = [
+            "aoss:ReadDocument",
+            "aoss:WriteDocument",
+            "aoss:CreateIndex",
+            "aoss:DeleteIndex",
+            "aoss:UpdateIndex",
+            "aoss:DescribeIndex"
+          ]
+        },
+        {
+          ResourceType = "collection"
+          Resource     = ["collection/${var.project_name}-${var.environment}-kb"]
+          Permission = [
+            "aoss:CreateCollectionItems",
+            "aoss:DeleteCollectionItems",
+            "aoss:UpdateCollectionItems",
+            "aoss:DescribeCollectionItems"
+          ]
+        }
+      ]
+      Principal = [var.bedrock_kb_role_arn, data.aws_caller_identity.current.arn]
+    }
+  ])
+}
+
+# Attach OSS API access directly to the KB role
+resource "aws_iam_role_policy" "oss_access" {
+  name = "${var.project_name}-${var.environment}-oss-access"
+  role = var.bedrock_kb_role_name
+
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Effect   = "Allow"
+        Action   = "aoss:APIAccessAll"
+        Resource = aws_opensearchserverless_collection.kb_collection.arn
+      }
+    ]
+  })
+}
+
+# ── OSS Collection ─────────────────────────────────────
+resource "aws_opensearchserverless_collection" "kb_collection" {
+  name       = "${var.project_name}-${var.environment}-kb"
+  type       = "VECTORSEARCH"
+  depends_on = [aws_opensearchserverless_security_policy.encryption, aws_opensearchserverless_security_policy.network]
+}
+
+resource "time_sleep" "wait_for_oss_policy" {
+  depends_on      = [aws_opensearchserverless_access_policy.this, aws_iam_role_policy.oss_access]
+  create_duration = "60s"
+}
+
+# ── OSS Index Creation ─────────────────────────────────
+resource "opensearch_index" "kb_index" {
+  name               = var.bedrock_config.vector_index_name
+  number_of_shards   = 2
+  number_of_replicas = 0
+  index_knn          = true
+
+  mappings = jsonencode({
+    properties = {
+      "bedrock-embedding" = {
+        type      = "knn_vector"
+        dimension = 1024 # Titan Embed v2 (standard)
+        method = {
+          name       = "hnsw"
+          engine     = "faiss"
+          space_type = "l2"
+        }
+      }
+      "AMAZON_BEDROCK_METADATA" = {
+        type  = "text"
+        index = false
+      }
+      "AMAZON_BEDROCK_TEXT_CHUNK" = {
+        type  = "text"
+        index = true
+      }
+    }
+  })
+
+  force_destroy = true
+  depends_on    = [time_sleep.wait_for_oss_policy]
+}
+
+# ── Bedrock Knowledge Base (KB) ──────────────────────
 resource "time_sleep" "wait_for_iam" {
   create_duration = "60s"
 }
 
 resource "aws_bedrockagent_knowledge_base" "main" {
-  depends_on = [time_sleep.wait_for_iam]
+  depends_on = [opensearch_index.kb_index, time_sleep.wait_for_iam]
   name       = "${var.project_name}-${var.environment}-kb"
   role_arn   = var.bedrock_kb_role_arn
 
