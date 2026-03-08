@@ -1,6 +1,7 @@
 import json
 import boto3
 import os
+import time
 
 dynamodb = boto3.resource('dynamodb')
 table = dynamodb.Table(os.environ['CAMPAIGN_TABLE'])
@@ -29,10 +30,12 @@ def handler(event, context):
                 'campaign_id': campaign_id,
                 'product_name': product_name
             },
-            UpdateExpression="SET approval_status = :s, reviewer_notes = :n",
+            UpdateExpression="SET approval_status = :s, reviewer_notes = :n, reviewed_at = :t, reviewed_by = :r",
             ExpressionAttributeValues={
                 ':s': status,
-                ':n': notes
+                ':n': notes,
+                ':t': time.strftime('%Y-%m-%dT%H:%M:%SZ'),
+                ':r': 'reviewer@company.com'
             }
         )
         
