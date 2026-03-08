@@ -26,3 +26,7 @@ output "api_key" {
   value     = try(module.api_gateway["enabled"].api_key, "N/A - Module Disabled")
   sensitive = true
 }
+
+output "knowledge_base_sync_command" {
+  value = "AWS_REGION=${var.aws_region} BEDROCK_KB_ID=${try(module.bedrock["enabled"].kb_id, "")} BEDROCK_DATA_SOURCE_ID=${try(module.bedrock["enabled"].data_source_id, "")} ./scripts/sync_kb.sh"
+}

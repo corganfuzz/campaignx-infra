@@ -75,7 +75,7 @@ locals {
         Statement = [{
           Sid      = "BedrockInvoke"
           Effect   = "Allow"
-          Action   = ["bedrock:InvokeAgent", "bedrock:InvokeModel"]
+          Action   = ["bedrock:*"]
           Resource = ["*"]
         }]
       })
@@ -88,7 +88,7 @@ locals {
           {
             Sid      = "BedrockKB"
             Effect   = "Allow"
-            Action   = ["bedrock:Retrieve", "bedrock:RetrieveAndGenerate", "bedrock:IngestKnowledgeBaseDocuments"]
+            Action   = ["bedrock:Retrieve", "bedrock:RetrieveAndGenerate", "bedrock:IngestKnowledgeBaseDocuments", "bedrock:InvokeModel"]
             Resource = ["*"]
           },
           {
@@ -120,7 +120,7 @@ locals {
   # ── Bedrock ─────────────────────────────────────────
   bedrock_config = {
     embedding_model_arn = "arn:aws:bedrock:us-east-1::foundation-model/amazon.titan-embed-text-v2:0"
-    foundation_model    = "anthropic.claude-3-5-sonnet-20241022-v2:0"
+    foundation_model    = "anthropic.claude-3-haiku-20240307-v1:0"
     vector_index_name   = "bedrock-knowledge-base-default-index"
     agent_version       = "DRAFT"
   }
@@ -135,7 +135,8 @@ locals {
       denied_topics = [
         "competitor brand mentions",
         "medical claims",
-        "financial guarantees"
+        "financial guarantees",
+        "Off-topic conversations unrelated to creative campaign generation"
       ]
     }
   }
@@ -161,7 +162,7 @@ locals {
         timeout       = 300
         memory_size   = 1024
         architectures = ["arm64"]
-        layers        = ["pillow"]
+        layers        = []
       }
       env_vars = {}
     }

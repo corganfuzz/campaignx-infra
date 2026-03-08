@@ -32,7 +32,7 @@ resource "aws_bedrock_guardrail" "this" {
     }
     filters_config {
       input_strength  = "HIGH"
-      output_strength = "HIGH"
+      output_strength = "NONE"
       type            = "PROMPT_ATTACK"
     }
   }

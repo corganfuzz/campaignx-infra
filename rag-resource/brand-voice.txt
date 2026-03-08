@@ -1,0 +1,6 @@
+Global Brand Voice Guidelines:
+- Tone: Minimalist, professional, authoritative, but warm and accessible.
+- Visual Language: Clean layouts, focus on center-aligned subjects.
+- Primary Color: CampaignX Blue (#0040FF).
+- Messaging: Focus on empowerment and efficiency.
+- Language: English is the baseline; translations must maintain the authoritative "we" voice.

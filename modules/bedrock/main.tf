@@ -183,29 +183,36 @@ resource "aws_bedrockagent_agent" "orchestrator" {
   foundation_model        = var.bedrock_config.foundation_model
   instruction             = file("${path.module}/src/agent.txt")
 
-  prompt_override_configuration {
-    prompt_configurations {
-      prompt_type          = "ORCHESTRATION"
-      base_prompt_template = file("${path.module}/src/agent.txt")
-      prompt_state         = "ENABLED"
-      prompt_creation_mode = "OVERRIDDEN"
-
-      inference_configuration {
-        temperature = 0.3
-        top_p       = 0.9
-        top_k       = 50
-        max_length  = 2000
-      }
-    }
-  }
 }
 
 resource "aws_bedrockagent_agent_action_group" "creative" {
   agent_id          = aws_bedrockagent_agent.orchestrator.id
   agent_version     = "DRAFT"
   action_group_name = "CreativeStrategy"
+  prepare_agent     = false
   action_group_executor {
     lambda = var.lambda_creative_arn
+  }
+
+  function_schema {
+    member_functions {
+      functions {
+        name        = "generate_creative_concepts"
+        description = "Generates localized ad copy and visual concepts for a product."
+        parameters {
+          map_block_key = "product_name"
+          description   = "The name of the product"
+          type          = "string"
+          required      = true
+        }
+        parameters {
+          map_block_key = "market_trends"
+          description   = "Cultural and marketing trends retrieved from the Knowledge Base"
+          type          = "string"
+          required      = true
+        }
+      }
+    }
   }
 }
 
@@ -213,8 +220,24 @@ resource "aws_bedrockagent_agent_action_group" "compliance" {
   agent_id          = aws_bedrockagent_agent.orchestrator.id
   agent_version     = "DRAFT"
   action_group_name = "ComplianceCheck"
+  prepare_agent     = false
   action_group_executor {
     lambda = var.lambda_compliance_arn
+  }
+
+  function_schema {
+    member_functions {
+      functions {
+        name        = "validate_brand_compliance"
+        description = "Passes generated copy and concepts through brand and legal guardrails."
+        parameters {
+          map_block_key = "creative_copy"
+          description   = "The localization ad copy to validate"
+          type          = "string"
+          required      = true
+        }
+      }
+    }
   }
 }
 
@@ -224,4 +247,25 @@ resource "aws_bedrockagent_agent_knowledge_base_association" "kb_association" {
   knowledge_base_id    = aws_bedrockagent_knowledge_base.main.id
   knowledge_base_state = "ENABLED"
   description          = "KB for brand guidelines and trends"
+}
+
+# ── Agent Alias ──────────────────────────────────────────────────
+# Stable endpoint for Lambda to call
+resource "aws_bedrockagent_agent_alias" "dev" {
+  agent_id         = aws_bedrockagent_agent.orchestrator.id
+  agent_alias_name = "dev-alias"
+  description      = "Development alias"
+
+  # Ensure we only create alias after everything is wired
+  depends_on = [
+    aws_bedrockagent_agent_action_group.creative,
+    aws_bedrockagent_agent_action_group.compliance,
+    aws_bedrockagent_agent_knowledge_base_association.kb_association
+  ]
+}
+
+# Wait for agent preparation to settle
+resource "time_sleep" "wait_for_agent" {
+  depends_on      = [aws_bedrockagent_agent_alias.dev]
+  create_duration = "30s"
 }

@@ -115,8 +115,8 @@ module "lambda" {
     RAG_BUCKET     = module.storage["rag-docs"].bucket_name
     SQS_QUEUE_URL  = module.sqs["campaign-gen"].queue_url
     SQS_QUEUE_ARN  = module.sqs["campaign-gen"].queue_arn
-    AGENT_ID       = try(module.bedrock["enabled"].agent_id, "")
-    AGENT_ALIAS_ID = "TSTALIASID"
+    PROJECT_NAME   = var.project_name
+    ENVIRONMENT    = var.environment
     GUARDRAIL_ID   = module.guardrails["default"].guardrail_id
   })
 
@@ -141,5 +141,41 @@ module "api_gateway" {
     "get-campaigns"   = module.lambda["get-campaigns"].invoke_arn
     "get-insights"    = module.lambda["get-insights"].invoke_arn
     "update-approval" = module.lambda["update-approval"].invoke_arn
+  }
+}
+# ── Bootstrap Data (S3 Objects) ─────────────────────────
+
+# 1. RAG Documents
+resource "aws_s3_object" "rag_docs" {
+  for_each = fileset("${path.module}/../rag-resource", "**/*.txt")
+
+  bucket = module.storage["rag-docs"].bucket_name
+  key    = "guidelines/${each.value}"
+  source = "${path.module}/../rag-resource/${each.value}"
+  etag   = filemd5("${path.module}/../rag-resource/${each.value}")
+}
+
+# 2. Product Assets
+# This will upload any images (png or jpg) found in scripts/images to the assets-input bucket
+resource "aws_s3_object" "product_assets" {
+  for_each = fileset("${path.module}/../scripts/images", "**/*.{png,jpg,jpeg}")
+
+  bucket = module.storage["assets-input"].bucket_name
+  key    = "products/${each.value}"
+  source = "${path.module}/../scripts/images/${each.value}"
+  etag   = filemd5("${path.module}/../scripts/images/${each.value}")
+}
+
+# 3. Knowledge Base Auto-Sync
+# Triggers the ingestion job automatically after Terraform finishes uploading documents
+resource "terraform_data" "kb_sync" {
+  depends_on = [aws_s3_object.rag_docs, aws_s3_object.product_assets, module.bedrock]
+
+  triggers_replace = [
+    timestamp() # Run every time
+  ]
+
+  provisioner "local-exec" {
+    command = "${path.module}/../scripts/sync_kb.sh ${module.bedrock["enabled"].kb_id} ${module.bedrock["enabled"].data_source_id}"
   }
 }
