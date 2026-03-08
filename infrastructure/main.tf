@@ -19,29 +19,6 @@ module "dynamodb" {
   table_key    = each.key
 }
 
-# ── Shared POC Policy (broad access for development) ──
-module "iam_policy" {
-  source = "../modules/iam_policy"
-
-  project_name        = var.project_name
-  environment         = var.environment
-  storage_bucket_arns = [for k, v in module.storage : v.bucket_arn]
-  dynamodb_table_arns = [for k, v in module.dynamodb : v.table_arn]
-}
-
-# ── IAM ────────────────────────────────────────────────
-module "iam" {
-  for_each = var.iam_roles
-  source   = "../modules/iam"
-
-  project_name  = var.project_name
-  environment   = var.environment
-  role_key      = each.key
-  trust_service = each.value.trust_service
-  policy_arns   = [module.iam_policy.policy_arn]
-}
-
-
 # ── SQS ────────────────────────────────────────────────
 module "sqs" {
   for_each = var.sqs_queues
@@ -63,12 +40,43 @@ module "guardrails" {
   guardrail_config = each.value
 }
 
+# ── IAM Roles ─────────────────────────────────────────
+module "iam" {
+  for_each = var.iam_roles
+  source   = "../modules/iam"
+
+  project_name  = var.project_name
+  environment   = var.environment
+  role_key      = each.key
+  trust_service = each.value.trust_service
+  policy_arns   = each.value.policy_arns
+}
+
+# ── IAM Managed Policies ────────────────────────────────
+module "iam_managed_policy" {
+  for_each = var.iam_policies
+  source   = "../modules/iam_managed_policy"
+
+  project_name    = var.project_name
+  environment     = var.environment
+  policy_key      = each.key
+  description     = each.value.description
+  policy_document = each.value.policy_document
+}
+
+# ── IAM Role-Policy Attachments ───────────────────────
+module "role_policy_attachment" {
+  for_each = var.role_policy_attachments
+  source   = "../modules/iam_role_policy_attachment"
+
+  role_name  = module.iam[each.value.role].role_name
+  policy_arn = module.iam_managed_policy[each.value.policy].policy_arn
+}
 
 # ── Bedrock (KB + Agent) ───────────────────────────────
 module "bedrock" {
   for_each = var.enable_ai_engine ? { "enabled" = true } : {}
   source   = "../modules/bedrock"
-
 
   project_name           = var.project_name
   environment            = var.environment
@@ -119,7 +127,6 @@ module "lambda" {
   create_apigw_permission   = contains(["submit-brief", "get-campaigns", "get-insights", "update-approval"], each.key)
   create_bedrock_permission = contains(["generate-campaign", "check-compliance"], each.key)
 }
-
 
 # ── API Gateway ────────────────────────────────────────
 module "api_gateway" {

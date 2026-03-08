@@ -13,16 +13,8 @@ resource "aws_iam_role" "this" {
   assume_role_policy = data.aws_iam_policy_document.assume_role.json
 }
 
-# Attach Lambda basic execution role if this is a Lambda role
-resource "aws_iam_role_policy_attachment" "lambda_basic" {
-  count      = var.trust_service == "lambda.amazonaws.com" ? 1 : 0
+resource "aws_iam_role_policy_attachment" "this" {
+  for_each   = toset(var.policy_arns)
   role       = aws_iam_role.this.name
-  policy_arn = "arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole"
-}
-
-# Attach any additional policy ARNs passed in
-resource "aws_iam_role_policy_attachment" "additional" {
-  count      = length(var.policy_arns)
-  role       = aws_iam_role.this.name
-  policy_arn = var.policy_arns[count.index]
+  policy_arn = each.value
 }

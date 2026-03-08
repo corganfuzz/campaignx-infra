@@ -23,6 +23,21 @@ variable "s3_buckets" {
 variable "iam_roles" {
   type = map(object({
     trust_service = string
+    policy_arns   = optional(list(string), [])
+  }))
+}
+
+variable "iam_policies" {
+  type = map(object({
+    description     = string
+    policy_document = string
+  }))
+}
+
+variable "role_policy_attachments" {
+  type = map(object({
+    role   = string
+    policy = string
   }))
 }
 
@@ -43,14 +58,12 @@ variable "sqs_queues" {
   type = map(any)
 }
 
-
 variable "guardrails" {
   type = map(object({
     blocked_words = list(string)
     denied_topics = list(string)
   }))
 }
-
 
 variable "lambda_functions" {
   type = map(object({
@@ -66,4 +79,3 @@ variable "lambda_functions" {
     env_vars = map(string)
   }))
 }
-
