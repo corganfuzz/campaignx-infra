@@ -7,6 +7,16 @@ module "storage" {
   environment  = var.environment
   bucket_key   = each.key
   versioning   = each.value.versioning
+
+  cors_rules = each.key == "outputs" ? [
+    {
+      allowed_headers = ["*"]
+      allowed_methods = ["GET", "HEAD"]
+      allowed_origins = ["http://localhost:5173", "http://localhost:3000", "https://*"]
+      expose_headers  = ["ETag", "Content-Disposition"]
+      max_age_seconds = 3000
+    }
+  ] : []
 }
 
 # ── DynamoDB ───────────────────────────────────────────

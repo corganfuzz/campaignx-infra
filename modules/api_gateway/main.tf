@@ -317,6 +317,22 @@ resource "aws_api_gateway_integration_response" "campaigns_id_approval_options" 
 resource "aws_api_gateway_deployment" "api_deployment" {
   rest_api_id = aws_api_gateway_rest_api.api.id
 
+  triggers = {
+    redeployment = sha1(jsonencode([
+      aws_api_gateway_resource.brief.id,
+      aws_api_gateway_method.brief_post.id,
+      aws_api_gateway_integration.brief_post.id,
+      aws_api_gateway_method.brief_options.id,
+      aws_api_gateway_integration.brief_options.id,
+      aws_api_gateway_resource.campaigns_id.id,
+      timestamp()
+    ]))
+  }
+
+  lifecycle {
+    create_before_destroy = true
+  }
+
   depends_on = [
     aws_api_gateway_integration.brief_post,
     aws_api_gateway_integration.briefs_batch_post,

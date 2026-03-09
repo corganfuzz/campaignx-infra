@@ -6,6 +6,43 @@ dynamodb = boto3.resource('dynamodb')
 table_name = os.environ['CAMPAIGN_TABLE']
 table = dynamodb.Table(table_name)
 
+ASSETS_BUCKET  = os.environ.get('ASSETS_BUCKET', '')
+OUTPUTS_BUCKET = os.environ.get('OUTPUTS_BUCKET', '')
+
+def _bucket_for_key(key: str) -> str:
+    """Route the key to the correct S3 bucket based on prefix."""
+    if key.startswith('generated/'):
+        return OUTPUTS_BUCKET
+    return ASSETS_BUCKET  # 'products/' reference photos
+
+def _refresh_presigned_urls(item: dict) -> dict:
+    """Re-generate pre-signed URLs for all image ratios so they never expire."""
+    images = item.get('images', {})
+    if not images:
+        return item
+
+    s3 = boto3.client('s3')
+    refreshed = {}
+    for ratio, img in images.items():
+        key = img.get('key') or ''
+        url = img.get('url') or ''
+
+        if key:
+            bucket = _bucket_for_key(key)
+            try:
+                url = s3.generate_presigned_url(
+                    'get_object',
+                    Params={'Bucket': bucket, 'Key': key},
+                    ExpiresIn=604800  # 7 days
+                )
+            except Exception as e:
+                print(f"Could not re-sign {key} from {bucket}: {e}")
+
+        refreshed[ratio] = {**img, 'url': url}
+
+    return {**item, 'images': refreshed}
+
+
 def handler(event, context):
     print(f"Received event: {json.dumps(event)}")
     
@@ -28,14 +65,15 @@ def handler(event, context):
                     "body": json.dumps({"error": f"Campaign {campaign_id} not found"})
                 }
             
-            # Since one campaign might have multiple product blueprints in this schema, 
-            # we return the list or the first one aggregated.
+            # Re-sign image URLs for each blueprint
+            refreshed_items = [_refresh_presigned_urls(item) for item in items]
+
             return {
                 "statusCode": 200,
                 "headers": {"Access-Control-Allow-Origin": "*", "Content-Type": "application/json"},
                 "body": json.dumps({
                     "id": campaign_id,
-                    "blueprints": items
+                    "blueprints": refreshed_items
                 })
             }
         else:
@@ -48,7 +86,7 @@ def handler(event, context):
             }
             
     except Exception as e:
-        print(f"Error: {str(e)}")
+        print(f"Error: {str(e)}") 
         return {
             "statusCode": 500,
             "headers": {"Access-Control-Allow-Origin": "*"},
