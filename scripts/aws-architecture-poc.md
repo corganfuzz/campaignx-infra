@@ -30,13 +30,14 @@ flowchart LR
         Agent["Bedrock Agent\nClaude 3.5 Sonnet"]
         Guard["Bedrock Guardrails\nSafety & Compliance"]
         L6["Lambda 6\nCheckCompliance\nAction Group"]
-        KB["Knowledge Base\nOpenSearch Serverless\nTitan Embed v2"]
+        KB["Knowledge Base\nLogic & Retrieval"]
         Nova["Nova Canvas\nImage Generation"]
     end
 
     %% ─── Data Stores ───
     subgraph Data ["Data Stores"]
         DDB[("DynamoDB\nCampaignTable\nGSI: status-created")]
+        OS[("OpenSearch Serverless\nVector Store\n1024-dim index")]
         S3Out[("S3: Outputs\n/outputs/{id}/{product}")]
         S3In[("S3: Assets Input\n/products/{name}/hero.png")]
         S3RAG[("S3: RAG Docs\n/brand-guidelines/\n/regional-trends/")]
@@ -63,7 +64,8 @@ flowchart LR
     L5 -- "check existing images" --> S3In
     L5 -- "invoke agent" --> Agent
     Agent -- "enforce policy" --> Guard
-    Agent -- "RAG query" --> KB
+    Agent -- "retrieve" --> KB
+    KB -- "vector search" --> OS
     KB -- "read chunks" --> S3RAG
     Agent -- "action group" --> L6
     L5 -- "generate image" --> Nova
@@ -88,7 +90,7 @@ flowchart LR
     classDef route fill:#e2e8f0,stroke:#94a3b8,color:#334155
 
     class L1,L2,L3,L4,L5,L6 lambda
-    class DDB,S3Out,S3In,S3RAG storage
+    class DDB,OS,S3Out,S3In,S3RAG storage
     class Agent,KB,Nova,Guard bedrock
     class SQS queue
     class R1,R3,R5,R6 route

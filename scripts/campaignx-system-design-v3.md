@@ -13,16 +13,17 @@
 5. [Deep Dive — Data Flow](#5-deep-dive--data-flow)
 6. [Deep Dive — Component Design](#6-deep-dive--component-design)
 7. [Deep Dive — Database Design](#7-deep-dive--database-design)
-8. [Deep Dive — API Design](#8-deep-dive--api-design)
-9. [Deep Dive — Frontend Architecture](#9-deep-dive--frontend-architecture)
-10. [Deep Dive — AI Pipeline](#10-deep-dive--ai-pipeline)
-11. [Deep Dive — Analytics & Feedback Loop](#11-deep-dive--analytics--feedback-loop)
-12. [Deep Dive — Approval Workflow](#12-deep-dive--approval-workflow)
-13. [Infrastructure as Code](#13-infrastructure-as-code)
-14. [How to Recreate From Scratch](#14-how-to-recreate-from-scratch)
-15. [Key Design Decisions & Trade-offs](#15-key-design-decisions--trade-offs)
-16. [Known Limitations](#16-known-limitations)
-17. [Future Improvements](#17-future-improvements)
+8. [Deep Dive — Vector Database (OpenSearch)](#8-deep-dive--vector-database-opensearch)
+9. [Deep Dive — API Design](#9-deep-dive--api-design)
+10. [Deep Dive — Frontend Architecture](#10-deep-dive--frontend-architecture)
+11. [Deep Dive — AI Pipeline](#11-deep-dive--ai-pipeline)
+12. [Deep Dive — Analytics & Feedback Loop](#12-deep-dive--analytics--feedback-loop)
+13. [Deep Dive — Approval Workflow](#13-deep-dive--approval-workflow)
+14. [Infrastructure as Code](#14-infrastructure-as-code)
+15. [How to Recreate From Scratch](#15-how-to-recreate-from-scratch)
+16. [Key Design Decisions & Trade-offs](#16-key-design-decisions--trade-offs)
+17. [Known Limitations](#17-known-limitations)
+18. [Future Improvements](#18-future-improvements)
 
 ---
 
@@ -438,7 +439,33 @@ year / month / day   string   ← partition keys (with partition projection)
 
 ---
 
-## 8. Deep Dive — API Design
+## 8. Deep Dive — Vector Database (OpenSearch)
+
+The system utilizes **Amazon OpenSearch Serverless (OSS)** as the vector database for high-performance semantic retrieval. This is a crucial component that allows the Bedrock Agent to access brand guidelines and market trends contextually.
+
+### Configuration
+
+-   **Collection Type:** `VECTORSEARCH`
+-   **Engine:** `nmslib` (compatible with `knn_vector`)
+-   **Index Type:** `knn_vector`
+-   **Distance Metric:** `l2` (Euclidean distance) or `cosine`
+-   **Dimensions:** `1024` (Must be strictly aligned with `amazon.titan-embed-text-v2:0`)
+
+### Access Control
+
+OpenSearch Serverless is secured via:
+1.  **Network Policy:** Restricts access to specific VPC endpoints or public access if required by the Bedrock service.
+2.  **Access Policy (IAM):** Grants the Bedrock Knowledge Base service role permissions to query (`indices:data/read/search`) and write (`indices:data/write/index`) to the collection.
+
+### Ingestion Pipeline
+When documents land in the `rag-docs` S3 bucket, a sync job (triggered manually or via EventBridge) causes Bedrock to:
+1.  Partition the documents into chunks.
+2.  Pass chunks through the Titan Embed model to generate vector representations.
+3.  Store vectors and original text snippets in the OpenSearch index.
+
+---
+
+## 9. Deep Dive — API Design
 
 All endpoints use **REST API v1** (API Gateway). CORS enabled via OPTIONS methods on all resources. API key authentication enabled — no Cognito at POC stage.
 
@@ -566,7 +593,7 @@ All endpoints use **REST API v1** (API Gateway). CORS enabled via OPTIONS method
 
 ---
 
-## 9. Deep Dive — Frontend Architecture
+## 10. Deep Dive — Frontend Architecture
 
 ### Tech Stack
 
@@ -676,7 +703,7 @@ src/
 
 ---
 
-## 10. Deep Dive — AI Pipeline
+## 11. Deep Dive — AI Pipeline
 
 ### Models Used
 
@@ -783,7 +810,7 @@ zip -r modules/lambda/layers/pillow.zip python/
 
 ---
 
-## 11. Deep Dive — Analytics & Feedback Loop
+## 12. Deep Dive — Analytics & Feedback Loop
 
 ### Analytics Pipeline
 
@@ -869,7 +896,7 @@ This is stored in DynamoDB, emitted to Firehose, aggregated by Athena, and surfa
 
 ---
 
-## 12. Deep Dive — Approval Workflow
+## 13. Deep Dive — Approval Workflow
 
 ### State Machine
 
@@ -914,7 +941,7 @@ The GSI is **sparse** — items without `approval_status` (i.e., campaigns still
 
 ---
 
-## 13. Infrastructure as Code
+## 14. Deep Dive — Infrastructure as Code
 
 ### Terraform Structure
 
@@ -1025,7 +1052,7 @@ Terraform resolves this dependency graph from a single `terraform apply` via `de
 
 ---
 
-## 14. How to Recreate From Scratch
+## 15. How to Recreate From Scratch
 
 ### Prerequisites
 
@@ -1159,7 +1186,7 @@ aws s3 sync dist/ s3://campaignx-dev-frontend/
 
 ---
 
-## 15. Key Design Decisions & Trade-offs
+## 16. Key Design Decisions & Trade-offs
 
 ### Decision 1: SQS vs Direct Lambda Invocation
 
@@ -1243,7 +1270,7 @@ aws s3 sync dist/ s3://campaignx-dev-frontend/
 
 ---
 
-## 16. Known Limitations
+## 17. Known Limitations
 
 These are accepted constraints for the POC. They do not block implementation but should be understood by anyone building or operating the system.
 
@@ -1282,7 +1309,7 @@ Lambda 4 generates S3 presigned URLs for image display in the frontend. These UR
 
 ---
 
-## 17. Future Improvements
+## 18. Future Improvements
 
 ### Short Term (v3.1)
 - **Automatic Logo Overlay:** Allow users to upload a brand logo (PNG/SVG) and have the `GenerateCampaign` Lambda composite it onto the final generated images using Pillow.
@@ -1311,4 +1338,4 @@ These are out of scope for the POC but should be considered for production readi
 
 ---
 
-*End of document — v2, revised 2026-03-07*
+*End of document — v3, revised 2026-03-08*
