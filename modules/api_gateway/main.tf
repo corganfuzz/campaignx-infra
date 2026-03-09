@@ -146,6 +146,174 @@ resource "aws_api_gateway_integration" "insights_get" {
   uri                     = var.lambda_integrations["get-insights"]
 }
 
+# --- CORS for /brief ---
+resource "aws_api_gateway_method" "brief_options" {
+  rest_api_id   = aws_api_gateway_rest_api.api.id
+  resource_id   = aws_api_gateway_resource.brief.id
+  http_method   = "OPTIONS"
+  authorization = "NONE"
+}
+
+resource "aws_api_gateway_integration" "brief_options" {
+  rest_api_id = aws_api_gateway_rest_api.api.id
+  resource_id = aws_api_gateway_resource.brief.id
+  http_method = aws_api_gateway_method.brief_options.http_method
+  type        = "MOCK"
+  request_templates = {
+    "application/json" = "{ \"statusCode\": 200 }"
+  }
+}
+
+resource "aws_api_gateway_method_response" "brief_options" {
+  rest_api_id = aws_api_gateway_rest_api.api.id
+  resource_id = aws_api_gateway_resource.brief.id
+  http_method = aws_api_gateway_method.brief_options.http_method
+  status_code = "200"
+  response_parameters = {
+    "method.response.header.Access-Control-Allow-Headers" = true
+    "method.response.header.Access-Control-Allow-Methods" = true
+    "method.response.header.Access-Control-Allow-Origin"  = true
+  }
+}
+
+resource "aws_api_gateway_integration_response" "brief_options" {
+  rest_api_id = aws_api_gateway_rest_api.api.id
+  resource_id = aws_api_gateway_resource.brief.id
+  http_method = aws_api_gateway_method.brief_options.http_method
+  status_code = aws_api_gateway_method_response.brief_options.status_code
+  response_parameters = {
+    "method.response.header.Access-Control-Allow-Headers" = "'Content-Type,X-Amz-Date,Authorization,X-Api-Key,X-Amz-Security-Token'"
+    "method.response.header.Access-Control-Allow-Methods" = "'GET,POST,OPTIONS,PATCH'"
+    "method.response.header.Access-Control-Allow-Origin"  = "'*'"
+  }
+}
+
+# --- CORS for /campaigns ---
+resource "aws_api_gateway_method" "campaigns_options" {
+  rest_api_id   = aws_api_gateway_rest_api.api.id
+  resource_id   = aws_api_gateway_resource.campaigns.id
+  http_method   = "OPTIONS"
+  authorization = "NONE"
+}
+
+resource "aws_api_gateway_integration" "campaigns_options" {
+  rest_api_id = aws_api_gateway_rest_api.api.id
+  resource_id = aws_api_gateway_resource.campaigns.id
+  http_method = aws_api_gateway_method.campaigns_options.http_method
+  type        = "MOCK"
+  request_templates = {
+    "application/json" = "{ \"statusCode\": 200 }"
+  }
+}
+
+resource "aws_api_gateway_method_response" "campaigns_options" {
+  rest_api_id = aws_api_gateway_rest_api.api.id
+  resource_id = aws_api_gateway_resource.campaigns.id
+  http_method = aws_api_gateway_method.campaigns_options.http_method
+  status_code = "200"
+  response_parameters = {
+    "method.response.header.Access-Control-Allow-Headers" = true
+    "method.response.header.Access-Control-Allow-Methods" = true
+    "method.response.header.Access-Control-Allow-Origin"  = true
+  }
+}
+
+resource "aws_api_gateway_integration_response" "campaigns_options" {
+  rest_api_id = aws_api_gateway_rest_api.api.id
+  resource_id = aws_api_gateway_resource.campaigns.id
+  http_method = aws_api_gateway_method.campaigns_options.http_method
+  status_code = aws_api_gateway_method_response.campaigns_options.status_code
+  response_parameters = {
+    "method.response.header.Access-Control-Allow-Headers" = "'Content-Type,X-Amz-Date,Authorization,X-Api-Key,X-Amz-Security-Token'"
+    "method.response.header.Access-Control-Allow-Methods" = "'GET,POST,OPTIONS,PATCH'"
+    "method.response.header.Access-Control-Allow-Origin"  = "'*'"
+  }
+}
+
+# --- CORS for /campaigns/{id} ---
+resource "aws_api_gateway_method" "campaigns_id_options" {
+  rest_api_id   = aws_api_gateway_rest_api.api.id
+  resource_id   = aws_api_gateway_resource.campaigns_id.id
+  http_method   = "OPTIONS"
+  authorization = "NONE"
+}
+
+resource "aws_api_gateway_integration" "campaigns_id_options" {
+  rest_api_id = aws_api_gateway_rest_api.api.id
+  resource_id = aws_api_gateway_resource.campaigns_id.id
+  http_method = aws_api_gateway_method.campaigns_id_options.http_method
+  type        = "MOCK"
+  request_templates = {
+    "application/json" = "{ \"statusCode\": 200 }"
+  }
+}
+
+resource "aws_api_gateway_method_response" "campaigns_id_options" {
+  rest_api_id = aws_api_gateway_rest_api.api.id
+  resource_id = aws_api_gateway_resource.campaigns_id.id
+  http_method = aws_api_gateway_method.campaigns_id_options.http_method
+  status_code = "200"
+  response_parameters = {
+    "method.response.header.Access-Control-Allow-Headers" = true
+    "method.response.header.Access-Control-Allow-Methods" = true
+    "method.response.header.Access-Control-Allow-Origin"  = true
+  }
+}
+
+resource "aws_api_gateway_integration_response" "campaigns_id_options" {
+  rest_api_id = aws_api_gateway_rest_api.api.id
+  resource_id = aws_api_gateway_resource.campaigns_id.id
+  http_method = aws_api_gateway_method.campaigns_id_options.http_method
+  status_code = aws_api_gateway_method_response.campaigns_id_options.status_code
+  response_parameters = {
+    "method.response.header.Access-Control-Allow-Headers" = "'Content-Type,X-Amz-Date,Authorization,X-Api-Key,X-Amz-Security-Token'"
+    "method.response.header.Access-Control-Allow-Methods" = "'GET,POST,OPTIONS,PATCH'"
+    "method.response.header.Access-Control-Allow-Origin"  = "'*'"
+  }
+}
+
+# --- CORS for /campaigns/{id}/approval ---
+resource "aws_api_gateway_method" "campaigns_id_approval_options" {
+  rest_api_id   = aws_api_gateway_rest_api.api.id
+  resource_id   = aws_api_gateway_resource.campaigns_id_approval.id
+  http_method   = "OPTIONS"
+  authorization = "NONE"
+}
+
+resource "aws_api_gateway_integration" "campaigns_id_approval_options" {
+  rest_api_id = aws_api_gateway_rest_api.api.id
+  resource_id = aws_api_gateway_resource.campaigns_id_approval.id
+  http_method = aws_api_gateway_method.campaigns_id_approval_options.http_method
+  type        = "MOCK"
+  request_templates = {
+    "application/json" = "{ \"statusCode\": 200 }"
+  }
+}
+
+resource "aws_api_gateway_method_response" "campaigns_id_approval_options" {
+  rest_api_id = aws_api_gateway_rest_api.api.id
+  resource_id = aws_api_gateway_resource.campaigns_id_approval.id
+  http_method = aws_api_gateway_method.campaigns_id_approval_options.http_method
+  status_code = "200"
+  response_parameters = {
+    "method.response.header.Access-Control-Allow-Headers" = true
+    "method.response.header.Access-Control-Allow-Methods" = true
+    "method.response.header.Access-Control-Allow-Origin"  = true
+  }
+}
+
+resource "aws_api_gateway_integration_response" "campaigns_id_approval_options" {
+  rest_api_id = aws_api_gateway_rest_api.api.id
+  resource_id = aws_api_gateway_resource.campaigns_id_approval.id
+  http_method = aws_api_gateway_method.campaigns_id_approval_options.http_method
+  status_code = aws_api_gateway_method_response.campaigns_id_approval_options.status_code
+  response_parameters = {
+    "method.response.header.Access-Control-Allow-Headers" = "'Content-Type,X-Amz-Date,Authorization,X-Api-Key,X-Amz-Security-Token'"
+    "method.response.header.Access-Control-Allow-Methods" = "'GET,POST,OPTIONS,PATCH'"
+    "method.response.header.Access-Control-Allow-Origin"  = "'*'"
+  }
+}
+
 resource "aws_api_gateway_deployment" "api_deployment" {
   rest_api_id = aws_api_gateway_rest_api.api.id
 
@@ -156,6 +324,11 @@ resource "aws_api_gateway_deployment" "api_deployment" {
     aws_api_gateway_integration.campaigns_id_get,
     aws_api_gateway_integration.campaigns_id_approval_patch,
     aws_api_gateway_integration.insights_get,
+    # CORS methods dependencies
+    aws_api_gateway_integration.brief_options,
+    aws_api_gateway_integration.campaigns_options,
+    aws_api_gateway_integration.campaigns_id_options,
+    aws_api_gateway_integration.campaigns_id_approval_options,
   ]
 }
 
