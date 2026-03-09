@@ -109,10 +109,20 @@ The architecture has been streamlined to focus exclusively on the **Creative Aut
 
 ### Updated API Route Map
 
-| Route | Handler | Action |
+| Handler | Action |
 |:------|:--------|:-------|
 | `POST /brief` | Lambda 1 | Validates brief → Creates DynamoDB item → Enqueues SQS message. |
 | `GET /campaigns` | Lambda 2 | Fetches campaign lists and details from DynamoDB. |
 | `PATCH /campaigns/{id}/approval` | Lambda 3 | Updates the processing status in DynamoDB (Approve/Reject). |
 | `GET /insights` | Lambda 4 | Aggregates campaign metrics directly from the DynamoDB table. |
 | `SQS Trigger` | Lambda 5 | Main worker: Bedrock Agent orchestration + Image generation. |
+
+### POC Browser Features
+- **S3 CORS Configuration:** Enabled on the Outputs bucket to allow cross-origin Blob fetching.
+- **Cache-Busting Downloads:** `fetch` calls use `no-cache` to ensure fresh assets with correct CORS headers.
+- **Spectrum S2 Styling:** Custom CSS standardization for Spectrum Workflow icons.
+
+### Future Enhancements (v3.1+)
+- **Logo Watermarking:** Compose brand logos onto generated assets using the Lambda Pillow layer.
+- **Batch Drag & Drop:** Support multi-file or CSV ingestion for high-volume campaign generation.
+
