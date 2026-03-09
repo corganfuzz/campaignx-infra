@@ -101,10 +101,8 @@ resource "time_sleep" "wait_for_oss_policy" {
 
 # ── OSS Index Creation ─────────────────────────────────
 resource "opensearch_index" "kb_index" {
-  name               = var.bedrock_config.vector_index_name
-  number_of_shards   = 2
-  number_of_replicas = 0
-  index_knn          = true
+  name      = var.bedrock_config.vector_index_name
+  index_knn = true
 
   mappings = jsonencode({
     properties = {
