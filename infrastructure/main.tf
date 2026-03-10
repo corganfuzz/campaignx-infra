@@ -1,4 +1,3 @@
-# ── Storage ────────────────────────────────────────────
 module "storage" {
   for_each = var.s3_buckets
   source   = "../modules/storage"
@@ -19,7 +18,6 @@ module "storage" {
   ] : []
 }
 
-# ── DynamoDB ───────────────────────────────────────────
 module "dynamodb" {
   for_each = var.dynamodb_tables
   source   = "../modules/dynamodb"
@@ -29,7 +27,6 @@ module "dynamodb" {
   table_key    = each.key
 }
 
-# ── SQS ────────────────────────────────────────────────
 module "sqs" {
   for_each = var.sqs_queues
   source   = "../modules/sqs"
@@ -39,7 +36,6 @@ module "sqs" {
   queue_key    = each.key
 }
 
-# ── Guardrails ─────────────────────────────────────────
 module "guardrails" {
   for_each = var.guardrails
   source   = "../modules/guardrails"
@@ -50,7 +46,6 @@ module "guardrails" {
   guardrail_config = each.value
 }
 
-# ── IAM Roles ─────────────────────────────────────────
 module "iam" {
   for_each = var.iam_roles
   source   = "../modules/iam"
@@ -62,7 +57,6 @@ module "iam" {
   policy_arns   = each.value.policy_arns
 }
 
-# ── IAM Managed Policies ────────────────────────────────
 module "iam_managed_policy" {
   for_each = var.iam_policies
   source   = "../modules/iam_managed_policy"
@@ -74,7 +68,6 @@ module "iam_managed_policy" {
   policy_document = each.value.policy_document
 }
 
-# ── IAM Role-Policy Attachments ───────────────────────
 module "role_policy_attachment" {
   for_each = var.role_policy_attachments
   source   = "../modules/iam_role_policy_attachment"
@@ -83,7 +76,6 @@ module "role_policy_attachment" {
   policy_arn = module.iam_managed_policy[each.value.policy].policy_arn
 }
 
-# ── Bedrock (KB + Agent) ───────────────────────────────
 module "bedrock" {
   for_each = var.enable_ai_engine ? { "enabled" = true } : {}
   source   = "../modules/bedrock"
@@ -99,12 +91,10 @@ module "bedrock" {
   bedrock_config         = var.bedrock_config
   guardrail_id           = module.guardrails["default"].guardrail_id
 
-  # Action group Lambda ARNs
   lambda_creative_arn   = module.lambda["generate-campaign"].function_arn
   lambda_compliance_arn = module.lambda["check-compliance"].function_arn
 }
 
-# ── Lambda Functions ───────────────────────────────────
 module "lambda" {
   for_each = var.lambda_functions
   source   = "../modules/lambda"
@@ -138,7 +128,6 @@ module "lambda" {
   create_bedrock_permission = contains(["generate-campaign", "check-compliance"], each.key)
 }
 
-# ── API Gateway ────────────────────────────────────────
 module "api_gateway" {
   for_each = var.enable_ai_engine ? { "enabled" = true } : {}
   source   = "../modules/api_gateway"
@@ -153,9 +142,7 @@ module "api_gateway" {
     "update-approval" = module.lambda["update-approval"].invoke_arn
   }
 }
-# ── Bootstrap Data (S3 Objects) ─────────────────────────
 
-# 1. RAG Documents
 resource "aws_s3_object" "rag_docs" {
   for_each = fileset("${path.module}/../rag-resource", "**/*.txt")
 
@@ -165,8 +152,6 @@ resource "aws_s3_object" "rag_docs" {
   etag   = filemd5("${path.module}/../rag-resource/${each.value}")
 }
 
-# 2. Product Assets
-# This will upload any images (png or jpg) found in scripts/images to the assets-input bucket
 resource "aws_s3_object" "product_assets" {
   for_each = fileset("${path.module}/../scripts/images", "**/*.{png,jpg,jpeg}")
 
@@ -176,13 +161,11 @@ resource "aws_s3_object" "product_assets" {
   etag   = filemd5("${path.module}/../scripts/images/${each.value}")
 }
 
-# 3. Knowledge Base Auto-Sync
-# Triggers the ingestion job automatically after Terraform finishes uploading documents
 resource "terraform_data" "kb_sync" {
   depends_on = [aws_s3_object.rag_docs, aws_s3_object.product_assets, module.bedrock]
 
   triggers_replace = [
-    timestamp() # Run every time
+    timestamp()
   ]
 
   provisioner "local-exec" {

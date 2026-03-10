@@ -1,14 +1,12 @@
 data "aws_caller_identity" "current" {}
 
 locals {
-  # ── Project ─────────────────────────────────────────
   project_name     = "campaignx"
   environment      = "dev"
   aws_region       = "us-east-1"
   enable_ai_engine = true
   account_id       = data.aws_caller_identity.current.account_id
 
-  # ── Storage ─────────────────────────────────────────
   s3_buckets = {
     "rag-docs"     = { versioning = true } # brand guidelines + regional trends
     "assets-input" = { versioning = true } # uploaded brand images
@@ -23,12 +21,10 @@ locals {
     "campaign-gen" = {}
   }
 
-  # ── Predicted ARNs (to avoid circular dependency) ────
   s3_arns  = { for k, v in local.s3_buckets : k => "arn:aws:s3:::${local.project_name}-${local.environment}-${k}" }
   ddb_arns = { for k, v in local.dynamodb_tables : k => "arn:aws:dynamodb:${local.aws_region}:${local.account_id}:table/${local.project_name}-${local.environment}-${k}" }
   sqs_arns = { for k, v in local.sqs_queues : k => "arn:aws:sqs:${local.aws_region}:${local.account_id}:${local.project_name}-${local.environment}-${k}" }
 
-  # ── IAM Roles ───────────────────────────────────────
   iam_roles = {
     "bedrock-agent"     = { trust_service = "bedrock.amazonaws.com", policy_arns = [] }
     "bedrock-kb"        = { trust_service = "bedrock.amazonaws.com", policy_arns = [] }
@@ -40,7 +36,6 @@ locals {
     "update-approval"   = { trust_service = "lambda.amazonaws.com", policy_arns = ["arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole"] }
   }
 
-  # ── IAM Policies ────────────────────────────────────
   iam_policies = {
     "lambda-data-access" = {
       description = "Grants access to project-specific S3 buckets, DynamoDB tables, and SQS queues."
@@ -117,7 +112,6 @@ locals {
     "bedrock-agent-invoke" = { role = "bedrock-agent", policy = "bedrock-agent-invoke" }
   }
 
-  # ── Bedrock ─────────────────────────────────────────
   bedrock_config = {
     embedding_model_arn = "arn:aws:bedrock:us-east-1::foundation-model/amazon.titan-embed-text-v2:0"
     foundation_model    = "anthropic.claude-3-haiku-20240307-v1:0"
@@ -125,7 +119,6 @@ locals {
     agent_version       = "DRAFT"
   }
 
-  # ── Guardrails ──────────────────────────────────────
   guardrails = {
     "default" = {
       blocked_words = [
@@ -141,7 +134,6 @@ locals {
     }
   }
 
-  # ── Lambda Functions ─────────────────────────────────
   lambda_functions = {
     "submit-brief" = {
       role = "submit-brief"

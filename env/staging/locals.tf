@@ -1,15 +1,9 @@
 locals {
-  # ==============================================
-  # Project Settings
-  # ==============================================
   project_name     = "concrete-fc"
   environment      = "staging"
   aws_region       = "us-east-1"
   enable_ai_engine = true
 
-  # ==============================================
-  # Networking Configuration
-  # ==============================================
   vpcs = {
     "main" = {
       cidr_block = "10.1.0.0/16"
@@ -20,9 +14,6 @@ locals {
     }
   }
 
-  # ==============================================
-  # Storage Configuration
-  # ==============================================
   s3_buckets = {
     "raw"       = { versioning = true }
     "bronze"    = { versioning = true }
@@ -31,9 +22,6 @@ locals {
     "kb-source" = { versioning = true }
   }
 
-  # ==============================================
-  # IAM Roles and Permissions
-  # ==============================================
   iam_roles = {
     "bedrock-agent" = { trust_service = "bedrock.amazonaws.com" }
     "bedrock-kb"    = { trust_service = "bedrock.amazonaws.com" }
@@ -42,9 +30,6 @@ locals {
     "api-proxy"     = { trust_service = "lambda.amazonaws.com" }
   }
 
-  # ==============================================
-  # Amazon Bedrock Configuration
-  # ==============================================
   bedrock_config = {
     embedding_model_arn = "arn:aws:bedrock:us-east-1::foundation-model/amazon.titan-embed-text-v2:0"
     foundation_model    = "anthropic.claude-3-haiku-20240307-v1:0"
@@ -52,9 +37,6 @@ locals {
     agent_version       = "DRAFT"
   }
 
-  # ==============================================
-  # AWS Lambda Configuration
-  # ==============================================
   lambda_config = {
     runtime       = "python3.11"
     handler       = "fred_fetcher.handler"
@@ -71,9 +53,6 @@ locals {
     allow_bedrock = false
   }
 
-  # ==============================================
-  # Databricks Modern Stack Configuration
-  # ==============================================
   databricks_config = {
     catalog_name             = "mortgage_xpert_staging"
     schemas                  = ["bronze", "silver", "gold"]

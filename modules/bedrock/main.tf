@@ -1,6 +1,5 @@
 data "aws_caller_identity" "current" {}
 
-# ── OpenSearch Serverless (OSS) Policies ───────────────
 resource "aws_opensearchserverless_security_policy" "network" {
   name = "${var.project_name}-${var.environment}-oss-net"
   type = "network"
@@ -70,7 +69,6 @@ resource "aws_opensearchserverless_access_policy" "this" {
   ])
 }
 
-# Attach OSS API access directly to the KB role
 resource "aws_iam_role_policy" "oss_access" {
   name = "${var.project_name}-${var.environment}-oss-access"
   role = var.bedrock_kb_role_name
@@ -87,7 +85,6 @@ resource "aws_iam_role_policy" "oss_access" {
   })
 }
 
-# ── OSS Collection ─────────────────────────────────────
 resource "aws_opensearchserverless_collection" "kb_collection" {
   name       = "${var.project_name}-${var.environment}-kb"
   type       = "VECTORSEARCH"
@@ -99,7 +96,6 @@ resource "time_sleep" "wait_for_oss_policy" {
   create_duration = "60s"
 }
 
-# ── OSS Index Creation ─────────────────────────────────
 resource "opensearch_index" "kb_index" {
   name      = var.bedrock_config.vector_index_name
   index_knn = true
@@ -108,7 +104,7 @@ resource "opensearch_index" "kb_index" {
     properties = {
       "bedrock-embedding" = {
         type      = "knn_vector"
-        dimension = 1024 # Titan Embed v2 (standard)
+        dimension = 1024
         method = {
           name       = "hnsw"
           engine     = "faiss"
@@ -130,7 +126,6 @@ resource "opensearch_index" "kb_index" {
   depends_on    = [time_sleep.wait_for_oss_policy]
 }
 
-# ── Bedrock Knowledge Base (KB) ──────────────────────
 resource "time_sleep" "wait_for_iam" {
   create_duration = "60s"
 }
@@ -173,7 +168,6 @@ resource "aws_bedrockagent_data_source" "main" {
   }
 }
 
-# ── Agent ───────────────────────────────────────────────────────
 resource "aws_bedrockagent_agent" "orchestrator" {
   depends_on              = [time_sleep.wait_for_iam]
   agent_name              = "${var.project_name}-${var.environment}-campaign-orchestrator"
@@ -247,14 +241,11 @@ resource "aws_bedrockagent_agent_knowledge_base_association" "kb_association" {
   description          = "KB for brand guidelines and trends"
 }
 
-# ── Agent Alias ──────────────────────────────────────────────────
-# Stable endpoint for Lambda to call
 resource "aws_bedrockagent_agent_alias" "dev" {
   agent_id         = aws_bedrockagent_agent.orchestrator.id
   agent_alias_name = "dev-alias"
   description      = "Development alias"
 
-  # Ensure we only create alias after everything is wired
   depends_on = [
     aws_bedrockagent_agent_action_group.creative,
     aws_bedrockagent_agent_action_group.compliance,
@@ -262,7 +253,6 @@ resource "aws_bedrockagent_agent_alias" "dev" {
   ]
 }
 
-# Wait for agent preparation to settle
 resource "time_sleep" "wait_for_agent" {
   depends_on      = [aws_bedrockagent_agent_alias.dev]
   create_duration = "30s"

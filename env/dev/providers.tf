@@ -27,7 +27,6 @@ terraform {
   }
 }
 
-# Use a data source to stabilize the endpoint at plan-time
 data "aws_opensearchserverless_collection" "kb" {
   name = "${local.project_name}-${local.environment}-kb"
 }

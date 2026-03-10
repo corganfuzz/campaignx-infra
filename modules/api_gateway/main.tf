@@ -146,7 +146,6 @@ resource "aws_api_gateway_integration" "insights_get" {
   uri                     = var.lambda_integrations["get-insights"]
 }
 
-# --- CORS for /brief ---
 resource "aws_api_gateway_method" "brief_options" {
   rest_api_id   = aws_api_gateway_rest_api.api.id
   resource_id   = aws_api_gateway_resource.brief.id
@@ -188,7 +187,6 @@ resource "aws_api_gateway_integration_response" "brief_options" {
   }
 }
 
-# --- CORS for /campaigns ---
 resource "aws_api_gateway_method" "campaigns_options" {
   rest_api_id   = aws_api_gateway_rest_api.api.id
   resource_id   = aws_api_gateway_resource.campaigns.id
@@ -230,7 +228,6 @@ resource "aws_api_gateway_integration_response" "campaigns_options" {
   }
 }
 
-# --- CORS for /campaigns/{id} ---
 resource "aws_api_gateway_method" "campaigns_id_options" {
   rest_api_id   = aws_api_gateway_rest_api.api.id
   resource_id   = aws_api_gateway_resource.campaigns_id.id
@@ -272,7 +269,6 @@ resource "aws_api_gateway_integration_response" "campaigns_id_options" {
   }
 }
 
-# --- CORS for /campaigns/{id}/approval ---
 resource "aws_api_gateway_method" "campaigns_id_approval_options" {
   rest_api_id   = aws_api_gateway_rest_api.api.id
   resource_id   = aws_api_gateway_resource.campaigns_id_approval.id
@@ -340,7 +336,6 @@ resource "aws_api_gateway_deployment" "api_deployment" {
     aws_api_gateway_integration.campaigns_id_get,
     aws_api_gateway_integration.campaigns_id_approval_patch,
     aws_api_gateway_integration.insights_get,
-    # CORS methods dependencies
     aws_api_gateway_integration.brief_options,
     aws_api_gateway_integration.campaigns_options,
     aws_api_gateway_integration.campaigns_id_options,
