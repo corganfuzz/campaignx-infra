@@ -367,4 +367,12 @@ resource "aws_api_gateway_usage_plan_key" "main" {
   usage_plan_id = aws_api_gateway_usage_plan.usage_plan.id
 }
 
+resource "local_file" "frontend_env" {
+  filename = "${path.root}/../../../campaignx/.env"
+  content  = <<-EOT
+    VITE_API_BASE_URL=${aws_api_gateway_stage.api_stage.invoke_url}
+    VITE_API_KEY=${aws_api_gateway_api_key.key.value}
+  EOT
+}
+
 
