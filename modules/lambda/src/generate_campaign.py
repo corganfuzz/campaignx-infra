@@ -1,68 +1,132 @@
-import json
-import boto3
-import os
-import time
 import base64
+import json
+import os
 import re
+import time
 
-bedrock_agent_runtime = boto3.client('bedrock-agent-runtime')
-bedrock_agent         = boto3.client('bedrock-agent')
-bedrock_runtime       = boto3.client('bedrock-runtime')
-dynamodb              = boto3.resource('dynamodb')
-s3_client             = boto3.client('s3')
+import boto3
 
-table          = dynamodb.Table(os.environ['CAMPAIGN_TABLE'])
-ASSETS_BUCKET  = os.environ['ASSETS_BUCKET']
-OUTPUTS_BUCKET = os.environ['OUTPUTS_BUCKET']
+# ── AWS clients ───────────────────────────────────────────────────────────────
 
-# Global cache for discovery to save API calls
-_DISCOVERY_CACHE = {}
+bedrock_agent_runtime = boto3.client("bedrock-agent-runtime")
+bedrock_agent         = boto3.client("bedrock-agent")
+bedrock_runtime       = boto3.client("bedrock-runtime")
+dynamodb              = boto3.resource("dynamodb")
+s3_client             = boto3.client("s3")
+
+# ── Environment / constants ───────────────────────────────────────────────────
+
+CAMPAIGN_TABLE = os.environ["CAMPAIGN_TABLE"]
+ASSETS_BUCKET  = os.environ["ASSETS_BUCKET"]
+OUTPUTS_BUCKET = os.environ["OUTPUTS_BUCKET"]
+PROJECT_NAME   = os.environ.get("PROJECT_NAME", "campaignx")
+ENVIRONMENT    = os.environ.get("ENVIRONMENT", "dev")
+USE_DRAFT      = os.environ.get("USE_DRAFT_AGENT", "false").lower() == "true"
+
+AGENT_NAME       = f"{PROJECT_NAME}-{ENVIRONMENT}-campaign-orchestrator"
+AGENT_ALIAS_NAME = "dev-alias"
+DRAFT_ALIAS_ID        = "TSTALIASID"
+NOVA_CANVAS_MODEL_ID  = "amazon.nova-canvas-v1:0"
+PRESIGNED_URL_TTL     = 604800  # 7 days
+
+IMAGE_RATIOS = {
+    "1x1":  {"width": 1024, "height": 1024, "format": "Instagram Feed",     "dimensions": "1080 × 1080px"},
+    "9x16": {"width": 768,  "height": 1280, "format": "TikTok / Reels",     "dimensions": "1080 × 1920px"},
+    "16x9": {"width": 1280, "height": 768,  "format": "YouTube / Facebook", "dimensions": "1920 × 1080px"},
+}
+
+IMAGE_NEGATIVE_PROMPT = (
+    "blurry, low quality, text overlays, watermarks, distorted faces, signature"
+)
+
+table = dynamodb.Table(CAMPAIGN_TABLE)
+
+# ── Agent discovery (cached across warm invocations) ─────────────────────────
+
+agent_cache: dict = {}
 
 
-def discover_agent_details():
-    if 'agent_id' in _DISCOVERY_CACHE:
-        return _DISCOVERY_CACHE['agent_id'], _DISCOVERY_CACHE['alias_id']
+# Returns (agent_id, alias_id), discovering and caching on first warm invocation
+def get_agent_ids() -> tuple[str, str]:
+    if agent_cache:
+        return agent_cache["agent_id"], agent_cache["alias_id"]
 
-    project = os.environ.get('PROJECT_NAME', 'campaignx')
-    env     = os.environ.get('ENVIRONMENT', 'dev')
-    target_agent_name = f"{project}-{env}-campaign-orchestrator"
-
-    agents   = bedrock_agent.list_agents().get('agentSummaries', [])
-    agent_id = next((a['agentId'] for a in agents if a['agentName'] == target_agent_name), None)
+    agents   = bedrock_agent.list_agents().get("agentSummaries", [])
+    agent_id = next((a["agentId"] for a in agents if a["agentName"] == AGENT_NAME), None)
 
     if not agent_id:
-        raise Exception(f"Agent '{target_agent_name}' not found")
+        raise ValueError(f"Bedrock agent '{AGENT_NAME}' not found")
 
-    # In dev use the DRAFT alias so changes are instantly reflected
-    alias_id = "TSTALIASID" if (env == 'dev' or os.environ.get('USE_DRAFT_AGENT') == 'true') else (
-        next(
-            (a['agentAliasId'] for a in bedrock_agent.list_agent_aliases(agentId=agent_id).get('agentAliasSummaries', [])
-             if a['agentAliasName'] == 'dev-alias'),
-            "TSTALIASID"
-        )
-    )
+    alias_id = resolve_alias(agent_id)
 
-    _DISCOVERY_CACHE['agent_id'] = agent_id
-    _DISCOVERY_CACHE['alias_id'] = alias_id
+    agent_cache["agent_id"] = agent_id
+    agent_cache["alias_id"] = alias_id
     return agent_id, alias_id
 
 
-def extract_image_prompt(agent_text: str, product: str, region: str, audience: str, message: str) -> str:
-    """
-    Try to pull a dedicated image prompt from the agent response.
-    Falls back to a rich marketing prompt if none is found.
-    """
-    # Look for explicit image prompt section from agent
-    patterns = [
-        r'(?:image prompt|visual prompt|image generation prompt)[:\s]+([^\n]{20,})',
-        r'(?:DALL-E|Stable Diffusion|Nova Canvas)[:\s]+([^\n]{20,})',
-    ]
-    for pat in patterns:
-        m = re.search(pat, agent_text, re.IGNORECASE)
-        if m:
-            return m.group(1).strip()[:500]
+# Uses the draft alias in dev/draft mode, otherwise looks up the named alias by name
+def resolve_alias(agent_id: str) -> str:
+    if ENVIRONMENT == "dev" or USE_DRAFT:
+        return DRAFT_ALIAS_ID
 
-    # Synthesize a strong marketing prompt from context
+    aliases = bedrock_agent.list_agent_aliases(agentId=agent_id).get("agentAliasSummaries", [])
+    return next(
+        (a["agentAliasId"] for a in aliases if a["agentAliasName"] == AGENT_ALIAS_NAME),
+        DRAFT_ALIAS_ID,
+    )
+
+
+# ── Agent invocation ──────────────────────────────────────────────────────────
+
+# Sends a prompt to the Bedrock agent and streams back the full text completion
+def invoke_agent(session_id: str, prompt: str) -> str:
+    agent_id, alias_id = get_agent_ids()
+
+    response = bedrock_agent_runtime.invoke_agent(
+        agentId=agent_id,
+        agentAliasId=alias_id,
+        sessionId=session_id,
+        inputText=prompt,
+    )
+
+    completion = ""
+    for event in response.get("completion"):
+        chunk = event.get("chunk")
+        if chunk:
+            completion += chunk["bytes"].decode()
+
+    return completion
+
+
+def build_campaign_prompt(product: str, region: str, audience: str, message: str, language: str) -> str:
+    return (
+        f"Generate a complete localized advertising campaign for:\n"
+        f"Product: {product}\n"
+        f"Region: {region}\n"
+        f"Audience: {audience}\n"
+        f"Core message: {message}\n"
+        f"Language: {language}\n\n"
+        f"Please provide: 1) Creative strategy 2) Ad copy headline and body "
+        f"3) An image generation prompt suitable for Amazon Nova Canvas that "
+        f"captures the campaign's visual direction."
+    )
+
+
+# ── Image prompt extraction ───────────────────────────────────────────────────
+
+IMAGE_PROMPT_PATTERNS = [
+    r"(?:image prompt|visual prompt|image generation prompt)[:\s]+([^\n]{20,})",
+    r"(?:DALL-E|Stable Diffusion|Nova Canvas)[:\s]+([^\n]{20,})",
+]
+
+
+# Pulls an explicit image prompt from the agent output; synthesizes a rich fallback if none found
+def extract_image_prompt(agent_text: str, product: str, region: str, audience: str, message: str) -> str:
+    for pattern in IMAGE_PROMPT_PATTERNS:
+        match = re.search(pattern, agent_text, re.IGNORECASE)
+        if match:
+            return match.group(1).strip()[:500]
+
     return (
         f"Professional advertising photograph for {product}. "
         f"Target audience: {audience}. Region: {region}. "
@@ -72,213 +136,197 @@ def extract_image_prompt(agent_text: str, product: str, region: str, audience: s
     )
 
 
-def generate_image_with_nova_canvas(image_prompt: str, campaign_id: str, product_name: str, ratio: str) -> tuple[str, str]:
-    """
-    Call Amazon Nova Canvas to generate a campaign image.
-    Returns (s3_key, presigned_url).
-    Ratio sizes: 1x1 → 1024×1024, 9x16 → 768×1280, 16x9 → 1280×768
-    """
-    size_map = {
-        '1x1':  (1024, 1024),
-        '9x16': (768,  1280),
-        '16x9': (1280, 768),
-    }
-    width, height = size_map.get(ratio, (1024, 1024))
+# ── Image generation ──────────────────────────────────────────────────────────
+
+# Invokes Nova Canvas for the given aspect ratio; returns (s3_key, presigned_url)
+def generate_image(image_prompt: str, campaign_id: str, product_name: str, ratio: str) -> tuple[str, str]:
+    dims = IMAGE_RATIOS[ratio]
 
     body = json.dumps({
         "taskType": "TEXT_IMAGE",
         "textToImageParams": {
-            "text": image_prompt,
-            "negativeText": "blurry, low quality, text overlays, watermarks, distorted faces, signature"
+            "text":         image_prompt,
+            "negativeText": IMAGE_NEGATIVE_PROMPT,
         },
         "imageGenerationConfig": {
             "numberOfImages": 1,
-            "width":  width,
-            "height": height,
+            "width":    dims["width"],
+            "height":   dims["height"],
             "cfgScale": 8.0,
-            "quality": "standard"
-        }
+            "quality":  "standard",
+        },
     })
 
-    response = bedrock_runtime.invoke_model(
-        modelId='amazon.nova-canvas-v1:0',
+    response   = bedrock_runtime.invoke_model(
+        modelId=NOVA_CANVAS_MODEL_ID,
         body=body,
-        contentType='application/json',
-        accept='application/json'
+        contentType="application/json",
+        accept="application/json",
+    )
+    result     = json.loads(response["body"].read())
+    image_data = base64.b64decode(result["images"][0])
+
+    s3_key = upload_image(image_data, campaign_id, product_name, ratio)
+    url    = presign(OUTPUTS_BUCKET, s3_key)
+    return s3_key, url
+
+
+def upload_image(image_data: bytes, campaign_id: str, product_name: str, ratio: str) -> str:
+    safe_product = re.sub(r"[^a-zA-Z0-9\-_]", "-", product_name)
+    s3_key       = f"generated/{campaign_id}/{safe_product}/{ratio}.png"
+    s3_client.put_object(Bucket=OUTPUTS_BUCKET, Key=s3_key, Body=image_data, ContentType="image/png")
+    return s3_key
+
+
+# Fallback: returns the uploaded reference image for this product from the assets bucket
+def get_reference_image(product_name: str) -> tuple[str, str]:
+    prefix = f"products/{product_name.replace(' ', '-')}"
+    objs   = s3_client.list_objects_v2(Bucket=ASSETS_BUCKET, Prefix=prefix)
+
+    if "Contents" not in objs:
+        return "", ""
+
+    key = objs["Contents"][0]["Key"]
+    return key, presign(ASSETS_BUCKET, key)
+
+
+def presign(bucket: str, key: str) -> str:
+    return s3_client.generate_presigned_url(
+        "get_object",
+        Params={"Bucket": bucket, "Key": key},
+        ExpiresIn=PRESIGNED_URL_TTL,
     )
 
-    result     = json.loads(response['body'].read())
-    image_b64  = result['images'][0]
-    image_data = base64.b64decode(image_b64)
 
-    # Save to S3 outputs bucket
-    safe_product = re.sub(r'[^a-zA-Z0-9\-_]', '-', product_name)
-    s3_key = f"generated/{campaign_id}/{safe_product}/{ratio}.png"
+# ── Campaign orchestration ────────────────────────────────────────────────────
 
-    s3_client.put_object(
-        Bucket=OUTPUTS_BUCKET,
-        Key=s3_key,
-        Body=image_data,
-        ContentType='image/png'
+# Runs the full 4-step generation pipeline for a single product
+def process_product(campaign_id: str, product_name: str, region: str, audience: str, message: str, language: str) -> None:
+    # Pre-flight: flip status to 'generating' so the frontend transitions out of 'pending'
+    table.update_item(
+        Key={"campaign_id": campaign_id, "product_name": product_name},
+        UpdateExpression="SET approval_status = :s",
+        ExpressionAttributeValues={":s": "generating"},
     )
 
-    presigned_url = s3_client.generate_presigned_url(
-        'get_object',
-        Params={'Bucket': OUTPUTS_BUCKET, 'Key': s3_key},
-        ExpiresIn=604800  # 7 days
-    )
+    prompt     = build_campaign_prompt(product_name, region, audience, message, language)
+    completion = invoke_agent(session_id=campaign_id, prompt=prompt)
+    print(f"Agent completion for {product_name}:\n{completion}")
 
-    return s3_key, presigned_url
+    image_prompt = extract_image_prompt(completion, product_name, region, audience, message)
+    print(f"Image prompt: {image_prompt}")
+
+    images = generate_all_ratios(image_prompt, campaign_id, product_name)
+
+    blueprint = {
+        "campaign_id":     campaign_id,
+        "product_name":    product_name,
+        "region":          region,
+        "audience":        audience,
+        "message":         message,
+        "strategy":        completion,
+        "images":          images,
+        "adCopy":          [{"lang": language, "text": completion}],
+        "image_prompt":    image_prompt,
+        "approval_status": "pending_review",
+        "created_at":      time.strftime("%Y-%m-%dT%H:%M:%SZ"),
+    }
+
+    table.put_item(Item=blueprint)
+    print(f"Blueprint saved for {product_name} (campaign {campaign_id})")
 
 
-def get_reference_image_url(product_name: str) -> tuple[str, str]:
-    """Fallback: find the uploaded product reference image in the assets bucket."""
-    product_search = product_name.replace(' ', '-')
-    objs = s3_client.list_objects_v2(Bucket=ASSETS_BUCKET, Prefix=f'products/{product_search}')
-    if 'Contents' in objs:
-        key = objs['Contents'][0]['Key']
-        url = s3_client.generate_presigned_url(
-            'get_object',
-            Params={'Bucket': ASSETS_BUCKET, 'Key': key},
-            ExpiresIn=604800
-        )
-        return key, url
-    return '', ''
+def generate_all_ratios(image_prompt: str, campaign_id: str, product_name: str) -> dict:
+    images = {}
+
+    for ratio, meta in IMAGE_RATIOS.items():
+        try:
+            s3_key, url = generate_image(image_prompt, campaign_id, product_name, ratio)
+            images[ratio] = {
+                "url":        url,
+                "key":        s3_key,
+                "format":     meta["format"],
+                "dimensions": meta["dimensions"],
+                "ratio":      ratio,
+                "generated":  True,
+                "prompt":     image_prompt[:200],
+            }
+            print(f"Nova Canvas generated {ratio}: {s3_key}")
+        except Exception as exc:
+            print(f"Nova Canvas failed for {ratio}: {exc}. Falling back to reference image.")
+            ref_key, ref_url = get_reference_image(product_name)
+            images[ratio] = {
+                "url":        ref_url,
+                "key":        ref_key,
+                "format":     meta["format"],
+                "dimensions": meta["dimensions"],
+                "ratio":      ratio,
+                "generated":  False,
+            }
+
+    return images
 
 
-# ─── Action Group Handler (called by Bedrock Agent) ──────────────────────────
+# ── Lambda entry point ────────────────────────────────────────────────────────
+
 def handler(event, context):
     print(f"Received event: {json.dumps(event)}")
 
-    if 'actionGroup' in event:
-        action_group = event['actionGroup']
-        function     = event['function']
-        parameters   = {p['name']: p['value'] for p in event.get('parameters', [])}
+    if "actionGroup" in event:
+        return fetch_brand_guidelines(event)
 
-        response_text = (
-            f"Creative strategy for {parameters.get('product_name', 'the product')} "
-            f"targeting {parameters.get('market_trends', 'general market')}:\n\n"
-            f"Strategy: Focus on aspirational lifestyle imagery and authentic storytelling. "
-            f"Headline: 'Built for every adventure.' "
-            f"Body copy: Engineered for performance, designed for the journey ahead. "
-            f"Image prompt: A professional outdoor adventure photograph showing {parameters.get('product_name', 'a premium product')} "
-            f"in a dramatic mountain landscape at golden hour, high-production commercial photography, vivid colors."
-        )
+    if "Records" in event:
+        return handle_sqs(event)
 
-        return {
-            "messageVersion": "1.0",
-            "response": {
-                "actionGroup": action_group,
-                "function": function,
-                "functionResponse": {
-                    "responseBody": {
-                        "TEXT": {"body": response_text}
-                    }
-                }
-            }
-        }
 
-    # ─── SQS Trigger (main campaign generation flow) ─────────────────────────
-    if 'Records' in event:
-        for record in event['Records']:
-            body        = json.loads(record['body'])
-            campaign_id = body.get('campaignId')
-            products    = body.get('products', ['Generic Product'])
+# Handles Bedrock Action Group requests to fetch established business rules.
+# NOTE: This returns a hardcoded mock response
+# In production, it would query a real marketing database or headless CMS.
+def fetch_brand_guidelines(event: dict) -> dict:
+    action_group = event["actionGroup"]
+    function     = event["function"]
+    parameters   = {p["name"]: p["value"] for p in event.get("parameters", [])}
+    product_name = parameters.get("product_name", "the product")
+    market       = parameters.get("market_trends", "general market")
 
-            for product_name in products:
-                region   = body.get('region', 'us')
-                audience = body.get('audience', 'General')
-                message  = body.get('message', '')
-                language = body.get('language', 'en')
+    response_text = (
+        f"Creative strategy for {product_name} targeting {market}:\n\n"
+        f"Strategy: Focus on aspirational lifestyle imagery and authentic storytelling. "
+        f"Headline: 'Built for every adventure.' "
+        f"Body copy: Engineered for performance, designed for the journey ahead. "
+        f"Image prompt: A professional outdoor adventure photograph showing {product_name} "
+        f"in a dramatic mountain landscape at golden hour, high-production commercial photography, vivid colors."
+    )
 
-                prompt = (
-                    f"Generate a complete localized advertising campaign for:\n"
-                    f"Product: {product_name}\n"
-                    f"Region: {region}\n"
-                    f"Audience: {audience}\n"
-                    f"Core message: {message}\n"
-                    f"Language: {language}\n\n"
-                    f"Please provide: 1) Creative strategy 2) Ad copy headline and body 3) An image generation prompt "
-                    f"suitable for Amazon Nova Canvas that captures the campaign's visual direction."
+    return {
+        "messageVersion": "1.0",
+        "response": {
+            "actionGroup": action_group,
+            "function":    function,
+            "functionResponse": {
+                "responseBody": {"TEXT": {"body": response_text}}
+            },
+        },
+    }
+
+
+def handle_sqs(event: dict) -> dict:
+    for record in event["Records"]:
+        body        = json.loads(record["body"])
+        campaign_id = body.get("campaignId")
+        products    = body.get("products", ["Generic Product"])
+
+        for product_name in products:
+            try:
+                process_product(
+                    campaign_id  = campaign_id,
+                    product_name = product_name,
+                    region       = body.get("region",   "us"),
+                    audience     = body.get("audience", "General"),
+                    message      = body.get("message",  ""),
+                    language     = body.get("language", "en"),
                 )
+            except Exception as exc:
+                print(f"Error processing {product_name} in campaign {campaign_id}: {exc}")
 
-                try:
-                    # ── Step 1: Invoke Bedrock Agent for creative strategy ──
-                    agent_id, alias_id = discover_agent_details()
-                    response = bedrock_agent_runtime.invoke_agent(
-                        agentId=agent_id,
-                        agentAliasId=alias_id,
-                        sessionId=campaign_id,
-                        inputText=prompt
-                    )
-
-                    completion = ''
-                    for evt in response.get('completion'):
-                        chunk = evt.get('chunk')
-                        if chunk:
-                            completion += chunk.get('bytes').decode()
-
-                    print(f"Agent completion for {product_name}:\n{completion}")
-
-                    # ── Step 2: Extract the image prompt from agent response ──
-                    image_prompt = extract_image_prompt(completion, product_name, region, audience, message)
-                    print(f"Image prompt for Nova Canvas: {image_prompt}")
-
-                    # ── Step 3: Generate all 3 ratios with Nova Canvas ────────
-                    images = {}
-                    ratio_meta = {
-                        '1x1':  ('Instagram Feed',     '1080 × 1080px'),
-                        '9x16': ('TikTok / Reels',     '1080 × 1920px'),
-                        '16x9': ('YouTube / Facebook', '1920 × 1080px'),
-                    }
-
-                    for ratio, (fmt, dims) in ratio_meta.items():
-                        try:
-                            s3_key, presigned_url = generate_image_with_nova_canvas(
-                                image_prompt, campaign_id, product_name, ratio
-                            )
-                            images[ratio] = {
-                                'url':        presigned_url,
-                                'key':        s3_key,
-                                'format':     fmt,
-                                'dimensions': dims,
-                                'ratio':      ratio,
-                                'generated':  True,    # flag: AI-generated
-                                'prompt':     image_prompt[:200],
-                            }
-                            print(f"Nova Canvas generated {ratio}: {s3_key}")
-                        except Exception as img_err:
-                            print(f"Nova Canvas failed for {ratio}: {img_err}. Using reference image.")
-                            # Graceful fallback to the uploaded reference photo
-                            ref_key, ref_url = get_reference_image_url(product_name)
-                            images[ratio] = {
-                                'url':        ref_url,
-                                'key':        ref_key,
-                                'format':     fmt,
-                                'dimensions': dims,
-                                'ratio':      ratio,
-                                'generated':  False,   # flag: fallback photo
-                            }
-
-                    # ── Step 4: Save blueprint to DynamoDB ────────────────────
-                    blueprint = {
-                        'campaign_id':     campaign_id,
-                        'product_name':    product_name,
-                        'region':          region,
-                        'audience':        audience,
-                        'message':         message,
-                        'strategy':        completion,
-                        'images':          images,
-                        'adCopy':          [{'lang': language, 'text': completion}],
-                        'image_prompt':    image_prompt,
-                        'approval_status': 'pending_review',
-                        'created_at':      time.strftime('%Y-%m-%dT%H:%M:%SZ'),
-                    }
-
-                    table.put_item(Item=blueprint)
-                    print(f"Blueprint saved for {product_name} (campaign {campaign_id})")
-
-                except Exception as e:
-                    print(f"Error generating campaign for {product_name}: {str(e)}")
-
-        return {'statusCode': 200}
+    return {"statusCode": 200}
