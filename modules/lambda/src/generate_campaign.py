@@ -32,19 +32,19 @@ IMAGE_RATIOS = {
         "width": 1024,
         "height": 1024,
         "format": "Instagram Feed",
-        "dimensions": "1080 × 1080px",
+        "dimensions": "1080 x 1080px",
     },
     "9x16": {
         "width": 768,
         "height": 1280,
         "format": "TikTok / Reels",
-        "dimensions": "1080 × 1920px",
+        "dimensions": "1080 x 1920px",
     },
     "16x9": {
         "width": 1280,
         "height": 768,
         "format": "YouTube / Facebook",
-        "dimensions": "1920 × 1080px",
+        "dimensions": "1920 x 1080px",
     },
 }
 
@@ -94,6 +94,7 @@ def resolve_alias(agent_id: str) -> str:
 
 
 # ── Agent invocation ──────────────────────────────────────────────────────────
+
 
 # Sends a prompt to the Bedrock agent and streams back the full text completion
 def invoke_agent(session_id: str, prompt: str) -> str:
@@ -158,6 +159,7 @@ def extract_image_prompt(
 
 
 # ── Image generation ──────────────────────────────────────────────────────────
+
 
 # Invokes Nova Canvas for the given aspect ratio; returns (s3_key, presigned_url)
 def generate_image(
@@ -228,6 +230,7 @@ def presign(bucket: str, key: str) -> str:
 
 
 # ── Campaign orchestration ────────────────────────────────────────────────────
+
 
 # Runs the full 4-step generation pipeline for a single product
 def process_product(
