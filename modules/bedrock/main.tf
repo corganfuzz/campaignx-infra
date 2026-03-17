@@ -175,13 +175,15 @@ resource "aws_bedrockagent_agent" "orchestrator" {
   foundation_model        = var.bedrock_config.foundation_model
   instruction             = file("${path.module}/src/agent.txt")
 
+  skip_resource_in_use_check = true
 }
 
 resource "aws_bedrockagent_agent_action_group" "creative" {
-  agent_id          = aws_bedrockagent_agent.orchestrator.id
-  agent_version     = "DRAFT"
-  action_group_name = "CreativeStrategy"
-  prepare_agent     = false
+  agent_id                   = aws_bedrockagent_agent.orchestrator.id
+  agent_version              = "DRAFT"
+  action_group_name          = "CreativeStrategy"
+  skip_resource_in_use_check = true
+  prepare_agent              = false
   action_group_executor {
     lambda = var.lambda_creative_arn
   }
@@ -209,10 +211,11 @@ resource "aws_bedrockagent_agent_action_group" "creative" {
 }
 
 resource "aws_bedrockagent_agent_action_group" "compliance" {
-  agent_id          = aws_bedrockagent_agent.orchestrator.id
-  agent_version     = "DRAFT"
-  action_group_name = "ComplianceCheck"
-  prepare_agent     = false
+  agent_id                   = aws_bedrockagent_agent.orchestrator.id
+  agent_version              = "DRAFT"
+  action_group_name          = "ComplianceCheck"
+  skip_resource_in_use_check = true
+  prepare_agent              = false
   action_group_executor {
     lambda = var.lambda_compliance_arn
   }
