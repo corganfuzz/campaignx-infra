@@ -10,10 +10,10 @@ module "storage" {
   cors_rules = each.key == "outputs" ? [
     {
       allowed_headers = ["*"]
-      allowed_methods = ["GET", "HEAD"]
-      allowed_origins = ["http://localhost:5173", "http://localhost:3000", "https://*"]
+      allowed_methods = ["GET", "HEAD", "PUT", "POST"]
+      allowed_origins = ["*"]
       expose_headers  = ["ETag", "Content-Disposition"]
-      max_age_seconds = 3000
+      max_age_seconds = 3600
     }
   ] : []
 }

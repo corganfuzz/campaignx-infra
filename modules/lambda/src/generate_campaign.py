@@ -1,4 +1,5 @@
 import base64
+import concurrent.futures
 import json
 import os
 import re
@@ -25,6 +26,7 @@ AGENT_NAME = f"{PROJECT_NAME}-{ENVIRONMENT}-campaign-orchestrator"
 AGENT_ALIAS_NAME = "dev-alias"
 DRAFT_ALIAS_ID = "TSTALIASID"
 NOVA_CANVAS_MODEL_ID = "amazon.nova-canvas-v1:0"
+COMPLIANCE_MODEL_ID = "us.anthropic.claude-3-5-haiku-20241022-v1:0"
 PRESIGNED_URL_TTL = 604800  # 7 days
 
 IMAGE_RATIOS = {
@@ -35,14 +37,14 @@ IMAGE_RATIOS = {
         "dimensions": "1080 x 1080px",
     },
     "9x16": {
-        "width": 768,
+        "width": 720,
         "height": 1280,
         "format": "TikTok / Reels",
         "dimensions": "1080 x 1920px",
     },
     "16x9": {
         "width": 1280,
-        "height": 768,
+        "height": 720,
         "format": "YouTube / Facebook",
         "dimensions": "1920 x 1080px",
     },
@@ -125,7 +127,9 @@ def build_campaign_prompt(
         f"Region: {region}\n"
         f"Audience: {audience}\n"
         f"Core message: {message}\n"
-        f"Language: {language}\n\n"
+        f"Language Code: {language}\n\n"
+        f"CRITICAL REQUIREMENT: You MUST output the final Ad Copy (both headline and body) strictly in the target language associated with the language code '{language}'.\n"
+        f"The creative strategy and image generation prompt must remain in English.\n\n"
         f"Please provide: 1) Creative strategy 2) Ad copy headline and body "
         f"3) An image generation prompt suitable for Amazon Nova Canvas that "
         f"captures the campaign's visual direction."
@@ -158,6 +162,21 @@ def extract_image_prompt(
     )
 
 
+# Isolates the actual ad copy (headline/body) from the agent's full narrative response
+def extract_ad_copy(agent_text: str) -> str:
+    # Pattern looks for text between the 'Ad Copy' header and the 'Image Gen' header
+    # Correctly handles various LLM numbering/formatting styles
+    pattern = r"(?:2\)?\s*Ad copy|Ad Copy)[:\s]+(.*?)(?=3\)?\s*An image|Image generation|Image Prompt|$)"
+    match = re.search(pattern, agent_text, re.IGNORECASE | re.DOTALL)
+
+    if match:
+        cleaned = match.group(1).strip()
+        # Remove any lingering markdown-style bolding from headers if they exist
+        return re.sub(r"^\**Headline:?\**\s*", "", cleaned, flags=re.IGNORECASE).strip()
+
+    return agent_text.strip()
+
+
 # ── Image generation ──────────────────────────────────────────────────────────
 
 
@@ -184,25 +203,50 @@ def generate_image(
         }
     )
 
-    response = bedrock_runtime.invoke_model(
-        modelId=NOVA_CANVAS_MODEL_ID,
-        body=body,
-        contentType="application/json",
-        accept="application/json",
-    )
-    result = json.loads(response["body"].read())
-    image_data = base64.b64decode(result["images"][0])
-
-    s3_key = upload_image(image_data, campaign_id, product_name, ratio)
-    url = presign(OUTPUTS_BUCKET, s3_key)
-    return s3_key, url
+    # Retry logic (3 attempts) specifically for Throttling or model availability issues
+    # common when launching multiple Nova requests in parallel.
+    last_exc = None
+    for attempt in range(3):
+        try:
+            # Introduce a tiny staggered jitter for the parallel workers
+            time.sleep(attempt * 0.5)
+            
+            response = bedrock_runtime.invoke_model(
+                modelId=NOVA_CANVAS_MODEL_ID,
+                body=body,
+                contentType="application/json",
+                accept="application/json",
+            )
+            result = json.loads(response["body"].read())
+            
+            if "images" not in result or not result["images"]:
+                # Check for safety filter or context-specific rejection
+                error_msg = result.get("error", "No images returned (likely safety filter)")
+                raise Exception(error_msg)
+                
+            image_data = base64.b64decode(result["images"][0])
+            s3_key = upload_image(image_data, campaign_id, product_name, ratio)
+            url = presign(OUTPUTS_BUCKET, s3_key)
+            return s3_key, url
+            
+        except Exception as e:
+            last_exc = e
+            print(f"Attempt {attempt+1} failed for {ratio}: {e}")
+            if "Throttling" not in str(e) and "limit" not in str(e).lower():
+                # If it's not a throttling issue, immediate retry is less likely to help, 
+                # but we'll try again anyway unless it's a fatal validation error.
+                pass
+    if last_exc:
+        raise last_exc
+    raise Exception(f"Failed to generate image for {ratio} after multiple attempts")
 
 
 def upload_image(
     image_data: bytes, campaign_id: str, product_name: str, ratio: str
 ) -> str:
     safe_product = re.sub(r"[^a-zA-Z0-9\-_]", "-", product_name)
-    s3_key = f"generated/{campaign_id}/{safe_product}/{ratio}.png"
+    safe_ratio = ratio.replace("x", "-")
+    s3_key = f"generated/{campaign_id}/{safe_product}/{safe_ratio}.png"
     s3_client.put_object(
         Bucket=OUTPUTS_BUCKET, Key=s3_key, Body=image_data, ContentType="image/png"
     )
@@ -227,6 +271,67 @@ def presign(bucket: str, key: str) -> str:
         Params={"Bucket": bucket, "Key": key},
         ExpiresIn=PRESIGNED_URL_TTL,
     )
+
+
+# ── Compliance check ─────────────────────────────────────────────────────────
+
+
+# Sends the generated ad copy to Claude for structured compliance evaluation.
+# Returns a list of {label, status} dicts matching the frontend ComplianceItem type.
+def run_compliance_check(ad_copy: str, product: str, region: str, language: str) -> list:
+    prompt = (
+        f"You are a legal and brand compliance auditor for global advertising campaigns.\n"
+        f"Evaluate the following ad copy for a product called '{product}' "
+        f"targeting the '{region}' market in language code '{language}'.\n\n"
+        f"Ad copy:\n<copy>\n{ad_copy}\n</copy>\n\n"
+        f"Run exactly these 5 checks and return ONLY a JSON array with no extra text, markdown, or explanation:\n"
+        f"1. Prohibited Claims - Does the copy make unsubstantiated superlative claims "
+        f"(e.g. '#1', 'best ever', 'guaranteed', 'cure', 'promise results', 'risk-free')?\n"
+        f"2. Legal Disclaimer - Does the copy include an appropriate legal disclaimer or "
+        f"is the product claim modest enough not to require one?\n"
+        f"3. Brand Voice - Is the tone premium, aspirational, and consistent with a "
+        f"high-end consumer goods brand?\n"
+        f"4. Cultural Sensitivity - Is the content appropriate and respectful for the '{region}' market?\n"
+        f"5. PII / Data Risk - Does the copy contain any personal information, phone numbers, "
+        f"email addresses, or URLs?\n\n"
+        f'Return this exact JSON structure with a short one-sentence "reason" for each result: '
+        f'[{{"label": "Prohibited Claims", "status": "pass", "reason": "No unsubstantiated claims found."}}, ...]\n'
+        f"Use 'pass' if fully met, 'warn' if borderline, 'fail' if violated. Keep each reason under 15 words."
+    )
+
+    body = json.dumps({
+        "anthropic_version": "bedrock-2023-05-31",
+        "max_tokens": 512,
+        "messages": [{"role": "user", "content": prompt}],
+    })
+
+    try:
+        response = bedrock_runtime.invoke_model(
+            modelId=COMPLIANCE_MODEL_ID,
+            body=body,
+            contentType="application/json",
+            accept="application/json",
+        )
+        result = json.loads(response["body"].read())
+        raw_text = result["content"][0]["text"].strip()
+
+        # Strip markdown fences if Claude wraps output in ```json
+        raw_text = re.sub(r"^```(?:json)?\s*|\s*```$", "", raw_text, flags=re.MULTILINE).strip()
+        checks = json.loads(raw_text)
+
+        valid_statuses = {"pass", "warn", "fail"}
+        return [
+            {
+                "label": c["label"],
+                "status": c["status"] if c["status"] in valid_statuses else "warn",
+                "reason": c.get("reason", ""),
+            }
+            for c in checks
+            if "label" in c and "status" in c
+        ]
+    except Exception as exc:
+        print(f"Compliance check failed: {exc}")
+        return [{"label": "Compliance Check", "status": "warn"}]
 
 
 # ── Campaign orchestration ────────────────────────────────────────────────────
@@ -257,7 +362,17 @@ def process_product(
     )
     print(f"Image prompt: {image_prompt}")
 
-    images = generate_all_ratios(image_prompt, campaign_id, product_name)
+    ad_copy_text = extract_ad_copy(completion)
+
+    # Run image generation (3 ratios) and compliance check concurrently —
+    # they share no state so there is no risk of a race condition.
+    with concurrent.futures.ThreadPoolExecutor(max_workers=2) as pool:
+        images_future = pool.submit(generate_all_ratios, image_prompt, campaign_id, product_name)
+        compliance_future = pool.submit(run_compliance_check, ad_copy_text, product_name, region, language)
+        images = images_future.result()
+        compliance = compliance_future.result()
+
+    print(f"Compliance results: {json.dumps(compliance)}")
 
     blueprint = {
         "campaign_id": campaign_id,
@@ -267,8 +382,9 @@ def process_product(
         "message": message,
         "strategy": completion,
         "images": images,
-        "adCopy": [{"lang": language, "text": completion}],
+        "adCopy": [{"lang": language, "text": ad_copy_text}],
         "image_prompt": image_prompt,
+        "compliance": compliance,
         "approval_status": "pending_review",
         "created_at": time.strftime("%Y-%m-%dT%H:%M:%SZ"),
     }
@@ -278,12 +394,14 @@ def process_product(
 
 
 def generate_all_ratios(image_prompt: str, campaign_id: str, product_name: str) -> dict:
+    """Generates all image formats concurrently using a thread pool."""
     images = {}
 
-    for ratio, meta in IMAGE_RATIOS.items():
+    def _generate_one(ratio: str, meta: dict) -> tuple[str, dict]:
         try:
             s3_key, url = generate_image(image_prompt, campaign_id, product_name, ratio)
-            images[ratio] = {
+            print(f"Nova Canvas generated {ratio}: {s3_key}")
+            return ratio, {
                 "url": url,
                 "key": s3_key,
                 "format": meta["format"],
@@ -292,13 +410,10 @@ def generate_all_ratios(image_prompt: str, campaign_id: str, product_name: str) 
                 "generated": True,
                 "prompt": image_prompt[:200],
             }
-            print(f"Nova Canvas generated {ratio}: {s3_key}")
         except Exception as exc:
-            print(
-                f"Nova Canvas failed for {ratio}: {exc}. Falling back to reference image."
-            )
+            print(f"Nova Canvas failed for {ratio}: {exc}. Falling back to reference image.")
             ref_key, ref_url = get_reference_image(product_name)
-            images[ratio] = {
+            return ratio, {
                 "url": ref_url,
                 "key": ref_key,
                 "format": meta["format"],
@@ -306,6 +421,12 @@ def generate_all_ratios(image_prompt: str, campaign_id: str, product_name: str) 
                 "ratio": ratio,
                 "generated": False,
             }
+
+    with concurrent.futures.ThreadPoolExecutor(max_workers=len(IMAGE_RATIOS)) as pool:
+        futures = {pool.submit(_generate_one, ratio, meta): ratio for ratio, meta in IMAGE_RATIOS.items()}
+        for future in concurrent.futures.as_completed(futures):
+            ratio, result = future.result()
+            images[ratio] = result
 
     return images
 
@@ -334,12 +455,10 @@ def fetch_brand_guidelines(event: dict) -> dict:
     market = parameters.get("market_trends", "general market")
 
     response_text = (
-        f"Creative strategy for {product_name} targeting {market}:\n\n"
-        f"Strategy: Focus on aspirational lifestyle imagery and authentic storytelling. "
-        f"Headline: 'Built for every adventure.' "
-        f"Body copy: Engineered for performance, designed for the journey ahead. "
-        f"Image prompt: A professional outdoor adventure photograph showing {product_name} "
-        f"in a dramatic mountain landscape at golden hour, high-production commercial photography, vivid colors."
+        f"Brand Guidelines for {product_name} targeting {market}:\n\n"
+        f"Brand Voice: Premium, aspirational, authentic, and lifestyle-oriented.\n"
+        f"Visual Style: High-production commercial photography, vivid lighting, clear product focus.\n"
+        f"Themes: Contextualize the product in its ideal real-world use case. DO NOT use generic outdoor settings unless relevant to the product. Headphones should be shown in commuter/urban/audio settings. Parkas in cold weather."
     )
 
     return {
