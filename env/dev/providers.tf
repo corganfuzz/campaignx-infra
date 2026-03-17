@@ -27,11 +27,7 @@ terraform {
   }
 }
 
-data "aws_opensearchserverless_collection" "kb" {
-  name = "${local.project_name}-${local.environment}-kb"
-}
-
 provider "opensearch" {
-  url         = data.aws_opensearchserverless_collection.kb.collection_endpoint
+  url         = module.infrastructure.bedrock_collection_endpoint
   healthcheck = false
 }
