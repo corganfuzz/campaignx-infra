@@ -150,11 +150,13 @@ locals {
       role = "generate-campaign"
       config = {
         runtime       = "python3.12"
-        handler       = "generate_campaign.handler"
+        handler       = "generate_campaign.main.handler"
         timeout       = 300
         memory_size   = 1024
         architectures = ["arm64"]
-        layers        = []
+        # Klayers public Pillow layer — arm64 / python3.12 / us-east-1
+        # https://github.com/keithrozario/Klayers
+        layers = ["arn:aws:lambda:us-east-1:770693421928:layer:Klayers-p312-arm64-Pillow:5"]
       }
       env_vars = {}
     }
