@@ -3,7 +3,6 @@ import concurrent.futures
 import io
 import json
 import re
-import textwrap
 import time
 
 try:
@@ -60,6 +59,34 @@ def get_reference_image(product_name: str) -> tuple[str, str]:
     return key, presign(ASSETS_BUCKET, key)
 
 
+def _wrap_text(text: str, font: ImageFont.ImageFont, max_width: int, draw: ImageDraw.ImageDraw) -> list[str]:
+    """Wraps text into lines that fit within max_width based on pixel width."""
+    words = text.split()
+    lines = []
+    current_line = []
+
+    for word in words:
+        # Check if adding this word exceeding max_width
+        test_line = " ".join(current_line + [word])
+        bbox = draw.textbbox((0, 0), test_line, font=font)
+        w = bbox[2] - bbox[0]
+        
+        if w <= max_width:
+            current_line.append(word)
+        else:
+            if current_line:
+                lines.append(" ".join(current_line))
+                current_line = [word]
+            else:
+                # Word itself is too wide, force it anyway
+                lines.append(word)
+                current_line = []
+                
+    if current_line:
+        lines.append(" ".join(current_line))
+    return lines
+
+
 def composite_text_overlay(
     image_bytes: bytes,
     message: str,
@@ -81,23 +108,22 @@ def composite_text_overlay(
         img = Image.open(io.BytesIO(image_bytes)).convert("RGBA")
         w, h = img.size
 
-        # Font sizing (Premium weighting - significantly larger)
+        # Font sizing (Premium weighting - significantly larger for 4K/high-res)
         short_side = min(w, h)
-        msg_font_size = max(32, short_side // 12)
+        msg_font_size = max(42, short_side // 10)
 
         try:
             msg_font = ImageFont.truetype("/usr/share/fonts/dejavu/DejaVuSans-Bold.ttf", msg_font_size)
         except (IOError, OSError):
             msg_font = ImageFont.load_default()
 
-        # Wrap text into lines with generous width (90% of image)
-        padding_h = int(w * 0.05)
-        # Use more sophisticated wrapping based on actual font metrics if possible, 
-        # or just increase chars_per_line
-        approx_char_w = msg_font_size * 0.5
-        chars_per_line = max(12, int((w - 2 * padding_h) / approx_char_w))
+        # Create a temporary draw object for measurement
+        overlay = Image.new("RGBA", (w, h), (0, 0, 0, 0))
+        draw = ImageDraw.Draw(overlay)
 
-        msg_lines = textwrap.wrap(message or "", width=chars_per_line)
+        # Wrap text into lines using pixel-width metrics (90% of image width)
+        max_text_w = int(w * 0.90)
+        msg_lines = _wrap_text(message or "", msg_font, max_text_w, draw)
         line_count = len(msg_lines)
 
         # Measure dimensions for precise fit
@@ -108,9 +134,7 @@ def composite_text_overlay(
         v_margin = int(msg_font_size * 0.4)
         strip_h = text_h + v_margin * 2
 
-        # Draw refined backdrop (tight centered pill or gradient bar)
-        overlay = Image.new("RGBA", img.size, (0, 0, 0, 0))
-        draw = ImageDraw.Draw(overlay)
+        # Draw refined backdrop (gradient bar)
         strip_top = h - strip_h - int(h * 0.05) # Lift slightly off the bottom edge
         
         # Draw a slightly rounded or softened bar that fits the text
