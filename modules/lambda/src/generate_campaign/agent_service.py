@@ -76,9 +76,11 @@ def build_campaign_prompt(
         f"Language Code: {language}\n\n"
         f"CRITICAL REQUIREMENT: You MUST output the final Ad Copy (both headline and body) strictly in the target language associated with the language code '{language}'.\n"
         f"The creative strategy and image generation prompt must remain in English.\n\n"
-        f"Please provide: 1) Creative strategy 2) Ad copy headline and body "
-        f"3) An image generation prompt suitable for Amazon Nova Canvas that "
-        f"captures the campaign's visual direction."
+        f"Please provide:\n"
+        f"1) Creative strategy\n"
+        f"2) Ad copy headline and body\n"
+        f"3) An image generation prompt suitable for Amazon Nova Canvas\n"
+        f"4) A direct translation of the core message '{message}' into language '{language}' specifically for use as a high-impact image overlay."
     )
 
 
@@ -106,7 +108,7 @@ def extract_image_prompt(
 
 
 def extract_ad_copy(agent_text: str) -> str:
-    pattern = r"(?:2\)?\s*Ad copy|Ad Copy)[:\s]+(.*?)(?=3\)?\s*An image|Image generation|Image Prompt|$)"
+    pattern = r"(?:2\)?\s*Ad copy|Ad Copy)[:\s]+(.*?)(?=3\)?\s*An image|Image generation|Image Prompt|4\)?|$)"
     match = re.search(pattern, agent_text, re.IGNORECASE | re.DOTALL)
 
     if match:
@@ -114,3 +116,17 @@ def extract_ad_copy(agent_text: str) -> str:
         return re.sub(r"^\**Headline:?\**\s*", "", cleaned, flags=re.IGNORECASE).strip()
 
     return agent_text.strip()
+
+
+def extract_overlay_text(agent_text: str, original_message: str, region: str) -> str:
+    """Extracts the translated overlay text from field #4 or falls back to the original."""
+    if region.lower() in ["united states", "usa", "us"]:
+        return original_message
+
+    pattern = r"(?:4\)?\s*Direct translation|4\)?\s*Translation|4\)?\s*Image overlay)[:\s]+(.*?)(?=$)"
+    match = re.search(pattern, agent_text, re.IGNORECASE | re.DOTALL)
+
+    if match:
+        return match.group(1).strip().replace('"', "").replace("*", "")
+
+    return original_message

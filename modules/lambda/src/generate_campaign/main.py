@@ -1,3 +1,4 @@
+import concurrent.futures
 import json
 
 from .orchestrator import process_product
@@ -44,20 +45,30 @@ def handle_sqs(event: dict) -> dict:
         body = json.loads(record["body"])
         campaign_id = body.get("campaignId")
         products = body.get("products", ["Generic Product"])
+        region = body.get("region", "us")
+        audience = body.get("audience", "General")
+        message = body.get("message", "")
+        language = body.get("language", "en")
 
-        for product_name in products:
-            try:
-                process_product(
+        print(f"Parallelizing {len(products)} products for campaign {campaign_id}")
+
+        with concurrent.futures.ThreadPoolExecutor(max_workers=min(len(products), 5)) as pool:
+            futures = []
+            for product_name in products:
+                futures.append(pool.submit(
+                    process_product,
                     campaign_id=campaign_id,
                     product_name=product_name,
-                    region=body.get("region", "us"),
-                    audience=body.get("audience", "General"),
-                    message=body.get("message", ""),
-                    language=body.get("language", "en"),
-                )
-            except Exception as exc:
-                print(
-                    f"Error processing {product_name} in campaign {campaign_id}: {exc}"
-                )
+                    region=region,
+                    audience=audience,
+                    message=message,
+                    language=language
+                ))
+            
+            for future in concurrent.futures.as_completed(futures):
+                try:
+                    future.result()
+                except Exception as exc:
+                    print(f"Parallel product process failed: {exc}")
 
     return {"statusCode": 200}

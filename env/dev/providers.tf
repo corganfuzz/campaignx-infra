@@ -9,6 +9,10 @@ terraform {
       source  = "hashicorp/aws"
       version = "~> 5.0"
     }
+    klayers = {
+      version = "~> 1.0.0"
+      source  = "ldcorentin/klayer"
+    }
     archive = {
       source = "hashicorp/archive"
     }

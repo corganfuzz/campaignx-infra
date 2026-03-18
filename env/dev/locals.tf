@@ -1,4 +1,9 @@
 data "aws_caller_identity" "current" {}
+data "klayers_package_latest_version" "pillow" {
+  name           = "Pillow"
+  region         = "us-east-1"
+  python_version = "3.12"
+}
 
 locals {
   project_name     = "campaignx"
@@ -153,10 +158,10 @@ locals {
         handler       = "generate_campaign.main.handler"
         timeout       = 300
         memory_size   = 1024
-        architectures = ["arm64"]
-        # Klayers public Pillow layer — arm64 / python3.12 / us-east-1
-        # https://github.com/keithrozario/Klayers
-        layers = ["arn:aws:lambda:us-east-1:770693421928:layer:Klayers-p312-arm64-Pillow:5"]
+        architectures = ["x86_64"]
+        # Klayers public Pillow layer - x86_64 / python3.12 / us-east-1
+        # Using ldc-corentin/klayer provider
+        layers = [data.klayers_package_latest_version.pillow.arn]
       }
       env_vars = {}
     }

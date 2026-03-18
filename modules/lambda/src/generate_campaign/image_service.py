@@ -25,8 +25,13 @@ from .config import (
 )
 
 
+def _slugify(text: str) -> str:
+    """Standardizes product names for S3 keys and local folders."""
+    return re.sub(r"[^a-zA-Z0-9\-_]", "-", text.strip()).replace("--", "-").strip("-")
+
+
 def upload_image(image_data: bytes, campaign_id: str, product_name: str, ratio: str) -> str:
-    safe_product = re.sub(r"[^a-zA-Z0-9\-_]", "-", product_name)
+    safe_product = _slugify(product_name)
     safe_ratio = ratio.replace("x", "-")
     s3_key = f"generated/{campaign_id}/{safe_product}/{safe_ratio}.png"
     s3_client.put_object(
@@ -44,7 +49,8 @@ def presign(bucket: str, key: str) -> str:
 
 
 def get_reference_image(product_name: str) -> tuple[str, str]:
-    prefix = f"products/{product_name.replace(' ', '-')}"
+    safe_product = _slugify(product_name)
+    prefix = f"products/{safe_product}/"
     objs = s3_client.list_objects_v2(Bucket=ASSETS_BUCKET, Prefix=prefix)
 
     if "Contents" not in objs:
@@ -57,14 +63,13 @@ def get_reference_image(product_name: str) -> tuple[str, str]:
 def composite_text_overlay(
     image_bytes: bytes,
     message: str,
-    ad_copy_headline: str,
+    ad_copy_headline: str, # Kept for backward compatibility, but not rendered
     ratio: str,
 ) -> bytes:
-    """Composites the campaign message and ad-copy headline onto the image.
+    """Composites the campaign message onto the image.
 
-    Renders a semi-transparent dark strip at the bottom of the image with:
-      - Campaign message  (large, white, bold-style)
-      - Ad-copy headline  (smaller, light-grey, below the message)
+    Renders a semi-transparent dark strip at the bottom of the image with the
+    localized campaign message (large, white, high-legibility).
 
     Returns the modified image as PNG bytes. If Pillow is unavailable the
     original bytes are returned unchanged so the pipeline never hard-fails.
@@ -76,54 +81,56 @@ def composite_text_overlay(
         img = Image.open(io.BytesIO(image_bytes)).convert("RGBA")
         w, h = img.size
 
-        # Font sizing
+        # Font sizing (Premium weighting - significantly larger)
         short_side = min(w, h)
-        msg_font_size = max(24, short_side // 22)
-        copy_font_size = max(16, short_side // 34)
+        msg_font_size = max(32, short_side // 12)
 
         try:
             msg_font = ImageFont.truetype("/usr/share/fonts/dejavu/DejaVuSans-Bold.ttf", msg_font_size)
-            copy_font = ImageFont.truetype("/usr/share/fonts/dejavu/DejaVuSans.ttf", copy_font_size)
         except (IOError, OSError):
             msg_font = ImageFont.load_default()
-            copy_font = ImageFont.load_default()
 
-        # Wrap text to fit image width with comfortable padding
-        padding = int(w * 0.05)
-        approx_char_w = msg_font_size * 0.55
-        chars_per_line = max(20, int((w - 2 * padding) / approx_char_w))
+        # Wrap text into lines with generous width (90% of image)
+        padding_h = int(w * 0.05)
+        # Use more sophisticated wrapping based on actual font metrics if possible, 
+        # or just increase chars_per_line
+        approx_char_w = msg_font_size * 0.5
+        chars_per_line = max(12, int((w - 2 * padding_h) / approx_char_w))
 
         msg_lines = textwrap.wrap(message or "", width=chars_per_line)
-        copy_lines = textwrap.wrap(ad_copy_headline or "", width=chars_per_line + 10)
+        line_count = len(msg_lines)
 
-        # Measure total text block height
-        line_gap = int(msg_font_size * 0.35)
-        msg_block_h = len(msg_lines) * (msg_font_size + line_gap)
-        copy_block_h = len(copy_lines) * (copy_font_size + line_gap) if copy_lines else 0
-        v_pad = int(short_side * 0.04)
-        strip_h = msg_block_h + copy_block_h + v_pad * 3
+        # Measure dimensions for precise fit
+        line_gap = int(msg_font_size * 0.15)
+        text_h = line_count * msg_font_size + (line_count - 1) * line_gap if line_count > 0 else 0
+        
+        # Tight padding to "fit perfectly"
+        v_margin = int(msg_font_size * 0.4)
+        strip_h = text_h + v_margin * 2
 
-        # Draw semi-transparent backdrop strip
+        # Draw refined backdrop (tight centered pill or gradient bar)
         overlay = Image.new("RGBA", img.size, (0, 0, 0, 0))
         draw = ImageDraw.Draw(overlay)
-        strip_top = h - strip_h
+        strip_top = h - strip_h - int(h * 0.05) # Lift slightly off the bottom edge
+        
+        # Draw a slightly rounded or softened bar that fits the text
         draw.rectangle(
-            [(0, strip_top), (w, h)],
-            fill=(0, 0, 0, 175),
+            [(0, strip_top), (w, strip_top + strip_h)], 
+            fill=(0, 0, 0, 180)
         )
 
-        # Write campaign message lines
-        y = strip_top + v_pad
+        # Write localized campaign message (Centered)
+        y = strip_top + v_margin
         for line in msg_lines:
-            draw.text((padding, y), line, font=msg_font, fill=(255, 255, 255, 255))
-            y += msg_font_size + line_gap
+            # Calculate centering for this specific line
+            bbox = draw.textbbox((0, 0), line, font=msg_font)
+            line_w = bbox[2] - bbox[0]
+            x = (w - line_w) // 2
 
-        # Write ad-copy headline lines
-        if copy_lines:
-            y += line_gap
-            for line in copy_lines:
-                draw.text((padding, y), line, font=copy_font, fill=(210, 210, 210, 220))
-                y += copy_font_size + line_gap
+            # Subtle drop shadow for depth
+            draw.text((x + 2, y + 2), line, font=msg_font, fill=(0, 0, 0, 160))
+            draw.text((x, y), line, font=msg_font, fill=(255, 255, 255, 255))
+            y += msg_font_size + line_gap
 
         composited = Image.alpha_composite(img, overlay).convert("RGB")
         buf = io.BytesIO()
@@ -164,11 +171,14 @@ def generate_all_ratios(
                 },
             })
 
-            last_exc = None
+            import random
+            last_exc: Exception = Exception(f"All retries failed for {ratio}")
             raw_image_bytes = None
-            for attempt in range(3):
+            for attempt in range(4):
                 try:
-                    time.sleep(attempt * 0.5)
+                    # Exponential backoff with jitter to prevent RPS race conditions
+                    sleep_time = (2 ** attempt) + (random.random() * 0.5)
+                    time.sleep(sleep_time)
                     response = bedrock_runtime.invoke_model(
                         modelId=NOVA_CANVAS_MODEL_ID,
                         body=body,
@@ -185,8 +195,9 @@ def generate_all_ratios(
                     print(f"Attempt {attempt+1} failed for {ratio}: {e}")
 
             if raw_image_bytes is None:
-                raise last_exc or Exception(f"All retries failed for {ratio}")
+                raise last_exc
 
+            assert raw_image_bytes is not None
             composited_bytes = composite_text_overlay(
                 raw_image_bytes, message, ad_copy_headline, ratio
             )

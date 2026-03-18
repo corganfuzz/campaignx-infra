@@ -1,6 +1,5 @@
 import concurrent.futures
 import json
-import re
 import time
 
 from .config import table
@@ -9,6 +8,7 @@ from .agent_service import (
     build_campaign_prompt,
     extract_image_prompt,
     extract_ad_copy,
+    extract_overlay_text,
 )
 from .image_service import generate_all_ratios
 from .compliance import run_compliance_check
@@ -36,12 +36,10 @@ def process_product(
     print(f"Image prompt: {image_prompt}")
 
     ad_copy_text = extract_ad_copy(completion)
-
-    # Extract just the headline for the image overlay
-    headline_match = re.search(
-        r"(?:Headline|Title)[:\s]+([^\n]{5,})", ad_copy_text, re.IGNORECASE
-    )
-    overlay_headline = headline_match.group(1).strip() if headline_match else ""
+    
+    # Extract the localized message for overlay (requested via field #4 in prompt)
+    overlay_headline = extract_overlay_text(completion, message, region)
+    print(f"Overlay headline (localized): {overlay_headline}")
 
     with concurrent.futures.ThreadPoolExecutor(max_workers=2) as pool:
         images_future = pool.submit(
