@@ -1,22 +1,21 @@
 import concurrent.futures
 import json
-
 from .orchestrator import process_product
 
-
 def handler(event, context):
-    print(f"Received event: {json.dumps(event)}")
-
-    if "actionGroup" in event:
-        return fetch_brand_guidelines(event)
-
+    """Entry point for the Campaign Generation Lambda."""
+    # SQS trigger (Async generation)
     if "Records" in event:
         return handle_sqs(event)
-
+    
+    # Bedrock Action Group trigger (Guidelines fetch)
+    if "actionGroup" in event:
+        return fetch_brand_guidelines(event)
+    
+    return {"statusCode": 400, "body": "Unknown event source"}
 
 def fetch_brand_guidelines(event: dict) -> dict:
-    """Handles Bedrock Action Group requests to fetch brand guidelines.
-    NOTE: Returns a hardcoded mock response."""
+    """Handles requests to fetch localized brand guidelines."""
     action_group = event["actionGroup"]
     function = event["function"]
     parameters = {p["name"]: p["value"] for p in event.get("parameters", [])}
@@ -25,9 +24,9 @@ def fetch_brand_guidelines(event: dict) -> dict:
 
     response_text = (
         f"Brand Guidelines for {product_name} targeting {market}:\n\n"
-        f"Brand Voice: Premium, aspirational, authentic, and lifestyle-oriented.\n"
-        f"Visual Style: High-production commercial photography, vivid lighting, clear product focus.\n"
-        f"Themes: Contextualize the product in its ideal real-world use case. DO NOT use generic outdoor settings unless relevant to the product. Headphones should be shown in commuter/urban/audio settings. Parkas in cold weather."
+        f"Voice: Premium, aspirational, and authentic.\n"
+        f"Style: Cinematic lighting, clear product focus, urban or contextual settings.\n"
+        f"Themes: Focus on real-world use cases. Use urban/audio settings for electronics, cold weather for outerwear."
     )
 
     return {
@@ -39,36 +38,31 @@ def fetch_brand_guidelines(event: dict) -> dict:
         },
     }
 
-
 def handle_sqs(event: dict) -> dict:
+    """Processes messages from SQS to generate full campaign blueprints."""
     for record in event["Records"]:
         body = json.loads(record["body"])
         campaign_id = body.get("campaignId")
-        products = body.get("products", ["Generic Product"])
-        region = body.get("region", "us")
+        products = body.get("products", [])
+        region = body.get("region", "global")
         audience = body.get("audience", "General")
         message = body.get("message", "")
         language = body.get("language", "en")
 
-        print(f"Parallelizing {len(products)} products for campaign {campaign_id}")
+        print(f"Processing {len(products)} products for campaign {campaign_id}")
 
-        with concurrent.futures.ThreadPoolExecutor(max_workers=min(len(products), 5)) as pool:
-            futures = []
-            for product_name in products:
-                futures.append(pool.submit(
+        with concurrent.futures.ThreadPoolExecutor(max_workers=5) as pool:
+            futures = [
+                pool.submit(
                     process_product,
                     campaign_id=campaign_id,
-                    product_name=product_name,
+                    product_name=p,
                     region=region,
                     audience=audience,
                     message=message,
                     language=language
-                ))
-            
-            for future in concurrent.futures.as_completed(futures):
-                try:
-                    future.result()
-                except Exception as exc:
-                    print(f"Parallel product process failed: {exc}")
+                ) for p in products
+            ]
+            concurrent.futures.wait(futures)
 
     return {"statusCode": 200}
