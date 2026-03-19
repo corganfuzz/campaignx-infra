@@ -20,4 +20,3 @@ variable "bedrock_config" {
 variable "guardrail_id" { type = string }
 
 variable "lambda_creative_arn" { type = string }
-variable "lambda_compliance_arn" { type = string }

@@ -165,17 +165,6 @@ locals {
       }
       env_vars = {}
     }
-    "check-compliance" = {
-      role = "check-compliance"
-      config = {
-        runtime       = "python3.12"
-        handler       = "check_compliance.handler"
-        timeout       = 30
-        memory_size   = 256
-        architectures = ["x86_64"]
-      }
-      env_vars = {}
-    }
     "get-campaigns" = {
       role = "get-campaigns"
       config = {

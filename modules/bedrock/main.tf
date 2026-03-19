@@ -210,32 +210,6 @@ resource "aws_bedrockagent_agent_action_group" "creative" {
   }
 }
 
-resource "aws_bedrockagent_agent_action_group" "compliance" {
-  agent_id                   = aws_bedrockagent_agent.orchestrator.id
-  agent_version              = "DRAFT"
-  action_group_name          = "ComplianceCheck"
-  skip_resource_in_use_check = true
-  prepare_agent              = false
-  action_group_executor {
-    lambda = var.lambda_compliance_arn
-  }
-
-  function_schema {
-    member_functions {
-      functions {
-        name        = "validate_brand_compliance"
-        description = "Passes generated copy and concepts through brand and legal guardrails."
-        parameters {
-          map_block_key = "creative_copy"
-          description   = "The localization ad copy to validate"
-          type          = "string"
-          required      = true
-        }
-      }
-    }
-  }
-}
-
 resource "aws_bedrockagent_agent_knowledge_base_association" "kb_association" {
   agent_id             = aws_bedrockagent_agent.orchestrator.id
   agent_version        = "DRAFT"
@@ -251,7 +225,6 @@ resource "aws_bedrockagent_agent_alias" "dev" {
 
   depends_on = [
     aws_bedrockagent_agent_action_group.creative,
-    aws_bedrockagent_agent_action_group.compliance,
     aws_bedrockagent_agent_knowledge_base_association.kb_association
   ]
 }

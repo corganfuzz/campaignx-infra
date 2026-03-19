@@ -92,7 +92,6 @@ module "bedrock" {
   guardrail_id           = module.guardrails["default"].guardrail_id
 
   lambda_creative_arn   = module.lambda["generate-campaign"].function_arn
-  lambda_compliance_arn = module.lambda["check-compliance"].function_arn
 }
 
 module "lambda" {
