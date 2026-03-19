@@ -7,6 +7,8 @@ module "storage" {
   bucket_key   = each.key
   versioning   = each.value.versioning
 
+  data_ingestion = each.value.data_ingestion
+
   cors_rules = each.key == "outputs" ? [
     {
       allowed_headers = ["*"]
@@ -92,6 +94,9 @@ module "bedrock" {
   guardrail_id           = module.guardrails["default"].guardrail_id
 
   lambda_creative_arn   = module.lambda["generate-campaign"].function_arn
+
+  enable_kb_sync  = true
+  sync_dependency = module.storage["rag-docs"].initial_content_ids
 }
 
 module "lambda" {
@@ -139,35 +144,5 @@ module "api_gateway" {
     "get-campaigns"   = module.lambda["get-campaigns"].invoke_arn
     "get-insights"    = module.lambda["get-insights"].invoke_arn
     "update-approval" = module.lambda["update-approval"].invoke_arn
-  }
-}
-
-resource "aws_s3_object" "rag_docs" {
-  for_each = fileset("${path.module}/../rag-resource", "**/*.txt")
-
-  bucket = module.storage["rag-docs"].bucket_name
-  key    = "guidelines/${each.value}"
-  source = "${path.module}/../rag-resource/${each.value}"
-  etag   = filemd5("${path.module}/../rag-resource/${each.value}")
-}
-
-resource "aws_s3_object" "product_assets" {
-  for_each = fileset("${path.module}/../scripts/images", "**/*.{png,jpg,jpeg}")
-
-  bucket = module.storage["assets-input"].bucket_name
-  key    = "products/${each.value}"
-  source = "${path.module}/../scripts/images/${each.value}"
-  etag   = filemd5("${path.module}/../scripts/images/${each.value}")
-}
-
-resource "terraform_data" "kb_sync" {
-  depends_on = [aws_s3_object.rag_docs, aws_s3_object.product_assets, module.bedrock]
-
-  triggers_replace = [
-    timestamp()
-  ]
-
-  provisioner "local-exec" {
-    command = "${path.module}/../scripts/sync_kb.sh ${module.bedrock["enabled"].kb_id} ${module.bedrock["enabled"].data_source_id}"
   }
 }

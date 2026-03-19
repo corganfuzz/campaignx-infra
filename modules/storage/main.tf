@@ -44,3 +44,12 @@ resource "aws_s3_bucket_cors_configuration" "this" {
     }
   }
 }
+
+resource "aws_s3_object" "content" {
+  for_each = var.data_ingestion.enabled ? fileset(var.data_ingestion.source_dir, var.data_ingestion.glob) : []
+
+  bucket = aws_s3_bucket.this.id
+  key    = "${var.data_ingestion.destination_prefix}${each.value}"
+  source = "${var.data_ingestion.source_dir}/${each.value}"
+  etag   = filemd5("${var.data_ingestion.source_dir}/${each.value}")
+}

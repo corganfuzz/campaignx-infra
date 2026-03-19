@@ -17,6 +17,12 @@ variable "enable_ai_engine" {
 variable "s3_buckets" {
   type = map(object({
     versioning = bool
+    data_ingestion = optional(object({
+      enabled            = bool
+      source_dir         = string
+      glob               = optional(string, "**/*")
+      destination_prefix = optional(string, "")
+    }), { enabled = false, source_dir = "" })
   }))
 }
 

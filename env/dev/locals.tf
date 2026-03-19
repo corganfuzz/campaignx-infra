@@ -13,9 +13,25 @@ locals {
   account_id       = data.aws_caller_identity.current.account_id
 
   s3_buckets = {
-    "rag-docs"     = { versioning = true } # brand guidelines + regional trends
-    "assets-input" = { versioning = true } # uploaded brand images
-    "outputs"      = { versioning = true } # generated campaign images
+    "rag-docs" = {
+      versioning = true
+      data_ingestion = {
+        enabled            = true
+        source_dir         = "${path.module}/../../rag-resource"
+        glob               = "**/*.txt"
+        destination_prefix = "guidelines/"
+      }
+    }
+    "assets-input" = {
+      versioning = true
+      data_ingestion = {
+        enabled            = true
+        source_dir         = "${path.module}/../../scripts/images"
+        glob               = "**/*.{png,jpg,jpeg}"
+        destination_prefix = "products/"
+      }
+    }
+    "outputs" = { versioning = true } # generated campaign images
   }
 
   dynamodb_tables = {

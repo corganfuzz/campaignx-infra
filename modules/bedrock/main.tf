@@ -233,3 +233,21 @@ resource "time_sleep" "wait_for_agent" {
   depends_on      = [aws_bedrockagent_agent_alias.dev]
   create_duration = "30s"
 }
+
+resource "terraform_data" "kb_sync" {
+  count = var.enable_kb_sync ? 1 : 0
+  
+  depends_on = [
+    aws_bedrockagent_knowledge_base.main,
+    aws_bedrockagent_data_source.main,
+    var.sync_dependency
+  ]
+
+  triggers_replace = [
+    timestamp()
+  ]
+
+  provisioner "local-exec" {
+    command = "${path.module}/../../scripts/sync_kb.sh ${aws_bedrockagent_knowledge_base.main.id} ${aws_bedrockagent_data_source.main.data_source_id}"
+  }
+}

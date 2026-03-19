@@ -14,3 +14,16 @@ variable "cors_rules" {
   }))
   default = []
 }
+
+variable "data_ingestion" {
+  description = "Optional data ingestion configuration for pre-populating the bucket"
+  type = object({
+    enabled            = bool
+    source_dir         = optional(string, "")
+    glob               = optional(string, "**/*")
+    destination_prefix = optional(string, "")
+  })
+  default = {
+    enabled = false
+  }
+}

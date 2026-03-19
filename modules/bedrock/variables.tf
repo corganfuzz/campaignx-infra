@@ -20,3 +20,15 @@ variable "bedrock_config" {
 variable "guardrail_id" { type = string }
 
 variable "lambda_creative_arn" { type = string }
+
+variable "enable_kb_sync" {
+  description = "Whether to trigger an initial sync of the Knowledge Base"
+  type        = bool
+  default     = false
+}
+
+variable "sync_dependency" {
+  description = "A list of resources to wait for before performing the sync"
+  type        = any
+  default     = []
+}
